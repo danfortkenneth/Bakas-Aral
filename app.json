@@ -49,7 +49,8 @@
           "photosPermission": "NEU-Bakás needs photo library access to scan QR images."
         }
       ],
-      "expo-av"
+      "expo-av",
+      "expo-audio"
     ],
     "experiments": {
       "typedRoutes": true

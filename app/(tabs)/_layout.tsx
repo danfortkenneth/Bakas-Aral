@@ -1,9 +1,9 @@
-import { Tabs } from 'expo-router';
+import { Tabs, useRouter } from 'expo-router';
 import { View, TouchableOpacity, Text, StyleSheet, Platform, Dimensions, PixelRatio, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useLanguage, useUser } from '../_layout'; 
-import { useEffect, useRef, useState } from 'react';
-import { auth, db } from '../../lib/firebase';
+import { useEffect, useState } from 'react';
+import { db } from '../../lib/firebase';
 import { doc, onSnapshot } from 'firebase/firestore';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -32,54 +32,44 @@ export default function TabLayout() {
 }
 
 function CustomTabBar({ state, descriptors, navigation }: any) {
+  const router = useRouter();
   const { lang } = useLanguage();
+  const { firebaseUser } = useUser();
   const [role, setRole] = useState<'admin' | 'teacher' | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    let unsubscribeDoc = () => {};
+    if (!firebaseUser) {
+      setRole(null);
+      setLoading(false);
+      return;
+    }
 
-    // Session listener para kilalanin ang account na pumasok
-    const unsubscribeAuth = auth.onAuthStateChanged((user) => {
-      if (!user) {
-        // Kapag nag-logout, linisin ang local states at patayin ang Firestore snapshot listener
-        setRole(null);
-        setLoading(false);
-        unsubscribeDoc(); 
-        return;
-      }
+    setLoading(true);
+    const userRef = doc(db, "users", firebaseUser.uid);
+    
+    const unsubscribeDoc = onSnapshot(userRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const userRole = docSnap.data().role;
+        setRole(userRole);
 
-      setLoading(true);
-      const userRef = doc(db, "users", user.uid);
-      
-      unsubscribeDoc = onSnapshot(userRef, (docSnap) => {
-        if (docSnap.exists()) {
-          const userRole = docSnap.data().role;
-          setRole(userRole);
-
-          // 🔥 AUTO-REDIRECT PARA SA ADMIN:
-          // Kung napatunayang 'admin', awtomatikong dadalhin sa admin-dashboard route.
-          if (userRole === 'admin') {
-            navigation.navigate('admin-dashboard');
-          }
-        } else {
-          setRole('teacher');
+        if (userRole === 'admin' && navigation?.navigate) {
+          navigation.navigate('admin-dashboard');
         }
-        setLoading(false);
-      }, (error) => {
-        // Tinitiyak na sinalo nang mapayapa ang error tuwing magtatapos ang session (Sign Out)
-        console.log("Error checking role inside tabbar handled gracefully.");
-        setLoading(false);
-      });
+      } else {
+        setRole('teacher');
+      }
+      setLoading(false);
+    }, (error) => {
+      console.log("Error checking role inside tabbar handled gracefully:", error.message);
+      setLoading(false);
     });
 
     return () => {
-      unsubscribeAuth();
       unsubscribeDoc();
     };
-  }, [navigation]);
+  }, [firebaseUser, navigation]);
 
-  // Habang naghihintay ng signal mula sa Firebase Firestore
   if (loading) {
     return (
       <View style={styles.tabBarContainer}>
@@ -91,12 +81,10 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
   }
 
   // 🛡️ KRITIKAL NA PAGSALA NG MGA ROUTES
-  const visibleRoutes = state.routes.filter((route: any) => {
+  const visibleRoutes = (state?.routes || []).filter((route: any) => {
     if (role === 'admin') {
-      // Kapag ADMIN ang naka-login, tanging ang 'admin-dashboard' tab LAMANG ang makikita.
       return route.name === 'admin-dashboard';
     } else {
-      // Kapag TEACHER naman, lalabas ang Home, Bakas, Progress, at Teacher (itago ang Admin).
       return route.name !== 'admin-dashboard';
     }
   });
@@ -109,9 +97,21 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
           const isFocused = state.index === originalIndex;
 
           const onPress = () => {
-            const event = navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
-            if (!isFocused && !event.defaultPrevented) {
-              navigation.navigate(route.name);
+            const event = navigation?.emit 
+              ? navigation.emit({ type: 'tabPress', target: route.key, canPreventDefault: true })
+              : null;
+
+            if (!isFocused && (!event || !event.defaultPrevented)) {
+              if (navigation?.navigate) {
+                navigation.navigate(route.name);
+              } else {
+                // Pag-handle sa Expo Router fallback: kapag 'index', ididirekta sa root tab
+                if (route.name === 'index') {
+                  router.push('/(tabs)');
+                } else {
+                  router.push(`/(tabs)/${route.name}` as any);
+                }
+              }
             }
           };
 
@@ -147,7 +147,6 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
                 size={isFocused ? normalize(18) : normalize(22)} 
                 color={isFocused ? 'white' : '#AAA'} 
               />
-              {/* Inilabas ang text label para makita rin ito habang naka-focus ang tab para sa mas magandang UX */}
               <Text style={[styles.tabLabel, { color: isFocused ? 'white' : '#AAA' }]}>
                 {displayTitle}
               </Text>

@@ -2,7 +2,7 @@ import React, { useRef, useState, useEffect } from 'react';
 import { StyleSheet, View, PanResponder, TouchableOpacity, Text, Image, Animated, Dimensions, PixelRatio, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { Audio } from 'expo-av';
+import { createAudioPlayer } from 'expo-audio';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView, SafeAreaProvider } from 'react-native-safe-area-context';
@@ -62,14 +62,14 @@ const CHAR_LIBRARY: any = {
   }
 };
 
-export default function TracingScreen() {
+export default function BakasScreen() {
   const router = useRouter();
   const { lang } = useLanguage();
   const params = useLocalSearchParams();
   
   const selectedChar = (params.selectedChar as string) || 'A';
   const studentId = (params.currentStudentId as string) || null;
-  const activeAvatar = (params.activeAvatar as string) || 'lion'; // Default kung walang galing sa dashboard
+  const activeAvatar = (params.activeAvatar as string) || 'lion';
   const charData = CHAR_LIBRARY[selectedChar] || CHAR_LIBRARY['A'];
 
   const [paths, setPaths] = useState<string[]>([]);
@@ -78,7 +78,6 @@ export default function TracingScreen() {
   const [saving, setSaving] = useState<boolean>(false);
   const [accuracy, setAccuracy] = useState<number>(100); 
   
-  // Feature #7 states para sa multi-sensory modal engine
   const [isAnimalFed, setIsAnimalFed] = useState<boolean>(false);
   const [earnedStars, setEarnedStars] = useState<number>(3);
   
@@ -86,76 +85,60 @@ export default function TracingScreen() {
   const totalPointsCount = charData.points.length;
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
-  // Variables para sa kalkulasyon ng dynamic accuracy framework
   const totalMoves = useRef<number>(0);
   const errorMoves = useRef<number>(0);
 
-  const phoneticSoundRef = useRef<Audio.Sound | null>(null);
-  const successSoundRef = useRef<Audio.Sound | null>(null);
-  const errorSoundRef = useRef<Audio.Sound | null>(null);
-  const crunchSoundRef = useRef<Audio.Sound | null>(null);
+  const phoneticPlayerRef = useRef<any>(null);
+  const successPlayerRef = useRef<any>(null);
+  const errorPlayerRef = useRef<any>(null);
+  const crunchPlayerRef = useRef<any>(null);
   const lastErrorSoundTime = useRef<number>(0);
 
-  // Load phonetic loop sound at success sound tuwing magpapalit ng letra
   useEffect(() => {
-    async function loadSoundsForChar() {
-      try {
-        if (phoneticSoundRef.current) {
-          await phoneticSoundRef.current.unloadAsync();
-          phoneticSoundRef.current = null;
-        }
-        if (successSoundRef.current) {
-          await successSoundRef.current.unloadAsync();
-          successSoundRef.current = null;
-        }
-
-        // Feature #2: Phonetic Audio Setup (Looping enabled habasg nagto-trace)
-        const { sound: pSound } = await Audio.Sound.createAsync(
-          charData.phoneticSound,
-          { isLooping: true, volume: 0.7 }
-        );
-        phoneticSoundRef.current = pSound;
-
-        // Feature #2.1: Contextual Anchor Word Sound
-        const { sound: wSound } = await Audio.Sound.createAsync(charData.wordSound);
-        successSoundRef.current = wSound;
-      } catch (e) {
-        console.log("Error loading dynamic character sounds:", e);
+    try {
+      if (phoneticPlayerRef.current) {
+        phoneticPlayerRef.current.remove();
+        phoneticPlayerRef.current = null;
       }
+      if (successPlayerRef.current) {
+        successPlayerRef.current.remove();
+        successPlayerRef.current = null;
+      }
+
+      const pPlayer = createAudioPlayer(charData.phoneticSound);
+      pPlayer.loop = true;
+      pPlayer.volume = 0.7;
+      phoneticPlayerRef.current = pPlayer;
+
+      const wPlayer = createAudioPlayer(charData.wordSound);
+      successPlayerRef.current = wPlayer;
+    } catch (e) {
+      console.log("Error initializing character audio players:", e);
     }
 
-    loadSoundsForChar();
     handleReset(); 
 
     return () => {
-      if (phoneticSoundRef.current) phoneticSoundRef.current.unloadAsync();
-      if (successSoundRef.current) successSoundRef.current.unloadAsync();
+      try {
+        if (phoneticPlayerRef.current) phoneticPlayerRef.current.remove();
+        if (successPlayerRef.current) successPlayerRef.current.remove();
+      } catch (e) {}
     };
   }, [selectedChar]);
 
-  // Load error at interactive crunch feedback sounds minsan lang sa mount life cycle
   useEffect(() => {
-    async function loadStaticSounds() {
-      try {
-        const { sound: errSound } = await Audio.Sound.createAsync(require('../../assets/sounds/error.mp3'));
-        errorSoundRef.current = errSound;
-      } catch (e) {
-        console.log("Error loading static error sound:", e);
-      }
-
-      try {
-        // Gamitin muna ang error sound asset kung wala pang crunch.mp3 para iwas-crash sa execution
-        const { sound: chmpSound } = await Audio.Sound.createAsync(require('../../assets/sounds/error.mp3')); 
-        crunchSoundRef.current = chmpSound;
-      } catch (e) {
-        console.log("Error loading static crunch sound:", e);
-      }
+    try {
+      errorPlayerRef.current = createAudioPlayer(require('../../assets/sounds/error.mp3'));
+      crunchPlayerRef.current = createAudioPlayer(require('../../assets/sounds/error.mp3'));
+    } catch (e) {
+      console.log("Error initializing static audio players:", e);
     }
-    loadStaticSounds();
 
     return () => {
-      if (errorSoundRef.current) errorSoundRef.current.unloadAsync();
-      if (crunchSoundRef.current) crunchSoundRef.current.unloadAsync();
+      try {
+        if (errorPlayerRef.current) errorPlayerRef.current.remove();
+        if (crunchPlayerRef.current) crunchPlayerRef.current.remove();
+      } catch (e) {}
     };
   }, []);
 
@@ -219,9 +202,12 @@ export default function TracingScreen() {
 
       const now = Date.now();
       if (now - lastErrorSoundTime.current > 1200) {
-        if (errorSoundRef.current) {
+        if (errorPlayerRef.current) {
           lastErrorSoundTime.current = now;
-          errorSoundRef.current.replayAsync().catch(() => {});
+          try {
+            errorPlayerRef.current.seekTo(0);
+            errorPlayerRef.current.play();
+          } catch (e) {}
         }
       }
     } else {
@@ -235,16 +221,15 @@ export default function TracingScreen() {
       onStartShouldSetPanResponder: () => !isFinished,
       onMoveShouldSetPanResponder: () => !isFinished,
       
-      onPanResponderGrant: async (evt) => {
+      onPanResponderGrant: (evt) => {
         const { locationX, locationY } = evt.nativeEvent;
         const svgX = (locationX / CANVAS_WIDTH) * 400;
         const svgY = (locationY / CANVAS_HEIGHT) * 600;
         setPaths((prev) => [...prev, `M${svgX.toFixed(1)},${svgY.toFixed(1)}`]);
         verifyTracingAccuracy(svgX, svgY);
 
-        // Feature #2: Patutugtugin ang phonetic audio sound kapag dumikit ang daliri
-        if (phoneticSoundRef.current) {
-          try { await phoneticSoundRef.current.playAsync(); } catch (e) {}
+        if (phoneticPlayerRef.current) {
+          try { phoneticPlayerRef.current.play(); } catch (e) {}
         }
       },
 
@@ -262,17 +247,15 @@ export default function TracingScreen() {
         verifyTracingAccuracy(svgX, svgY);
       },
 
-      onPanResponderRelease: async () => {
-        // Feature #2: I-pause ang audio loop kapag binuhat ang kamay ng bata
-        if (phoneticSoundRef.current) {
-          try { await phoneticSoundRef.current.pauseAsync(); } catch (e) {}
+      onPanResponderRelease: () => {
+        if (phoneticPlayerRef.current) {
+          try { phoneticPlayerRef.current.pause(); } catch (e) {}
         }
 
         if (isFinished) return;
 
         const uniqueHitsCount = new Set(hitPoints.current).size;
         if (uniqueHitsCount === totalPointsCount) {
-          // Dynamic calculation index para sa totoong feedback scores
           const calculatedScore = Math.max(50, Math.round(((totalMoves.current - errorMoves.current) / totalMoves.current) * 100));
           
           let stars = 1;
@@ -281,17 +264,19 @@ export default function TracingScreen() {
 
           setAccuracy(calculatedScore); 
           setEarnedStars(stars);
-          setIsAnimalFed(false); // Mananatiling gutom para lumabas ang interactive button panel ng Feature #7
+          setIsAnimalFed(false);
           setIsFinished(true);
           setIsOnPath(true);
           
-          if (phoneticSoundRef.current) {
-            try { await phoneticSoundRef.current.stopAsync(); } catch(e){}
+          if (phoneticPlayerRef.current) {
+            try { phoneticPlayerRef.current.pause(); } catch (e) {}
           }
 
-          // Feature #2.1: Contextual Anchor Word Sound ("Atis!")
-          if (successSoundRef.current) {
-            try { await successSoundRef.current.replayAsync(); } catch(e){}
+          if (successPlayerRef.current) {
+            try {
+              successPlayerRef.current.seekTo(0);
+              successPlayerRef.current.play();
+            } catch (e) {}
           }
           
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -366,31 +351,30 @@ export default function TracingScreen() {
           </Svg>
         </View>
 
-        {/* FEATURE #7: INTERACTIVE MULTI-SENSORY GAMIFIED REWARD MODAL OVERLAY */}
         {isFinished && (
           <Animated.View style={[styles.successContent, { opacity: fadeAnim }]}>
             
             {!isAnimalFed ? (
-              // STAGE 1: "FEED THE ANIMAL" INTERACTIVE GRATIFICATION PORTAL
               <View style={{ alignItems: 'center', width: '100%' }}>
                 <Text style={styles.rewardTitle}>🎉 TITIK {selectedChar} AY TAPOS NA!</Text>
                 <Text style={styles.rewardSubtitle}>
                   {lang === 'ph' ? `Gutom ang iyong avatar! Pindutin ang pagkain para ipakain ito sa kanya:` : `Your avatar is hungry! Tap the food to feed them:`}
                 </Text>
 
-                {/* EMOJI GRAPHICS MATRICES */}
                 <Text style={styles.animalLargeEmoji}>
                   {activeAvatar === 'lion' ? '🦁' : activeAvatar === 'bear' ? '🐻' : '🐰'}
                 </Text>
 
-                {/* FOOD HITBOX SELECTION INTERACTIVE ENGINE */}
                 <TouchableOpacity 
                   style={styles.foodActionBtn}
-                  onPress={async () => {
+                  onPress={() => {
                     setIsAnimalFed(true);
                     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                    if (crunchSoundRef.current) {
-                      try { await crunchSoundRef.current.replayAsync(); } catch(e){}
+                    if (crunchPlayerRef.current) {
+                      try {
+                        crunchPlayerRef.current.seekTo(0);
+                        crunchPlayerRef.current.play();
+                      } catch(e){}
                     }
                   }}
                 >
@@ -401,18 +385,15 @@ export default function TracingScreen() {
                 </TouchableOpacity>
               </View>
             ) : (
-              // STAGE 2: STICKER BOOK BADGE UNLOCKED OVERVIEW GRID LOGIC
               <View style={{ alignItems: 'center', width: '100%' }}>
                 <Text style={styles.badgeTextHeaderHeader}>🏆 STICKER UNLOCKED!</Text>
                 
-                {/* CHECKPOINT STARS PROGRESS BAR */}
                 <View style={styles.starsRewardRow}>
                   <Ionicons name="star" size={normalize(26)} color="#FBBF24" />
                   <Ionicons name="star" size={normalize(32)} color={earnedStars >= 2 ? "#FBBF24" : "#D1D5DB"} style={{ marginTop: -5 }} />
                   <Ionicons name="star" size={normalize(26)} color={earnedStars === 3 ? "#FBBF24" : "#D1D5DB"} />
                 </View>
 
-                {/* STICKER ARCHIVE BRANDING BADGE */}
                 <View style={styles.stickerEmblemFrameBox}>
                   <Image source={charData.image} style={styles.anchorImage} resizeMode="contain" />
                   <Text style={styles.stickerBadgePillLabel}>
@@ -430,7 +411,6 @@ export default function TracingScreen() {
                   {lang === 'ph' ? `Katumpakan: ${accuracy}%` : `Accuracy: ${accuracy}%`}
                 </Text>
                 
-                {/* ACTION BUTTON CONTROLS */}
                 <View style={styles.btnRow}>
                   <TouchableOpacity style={[styles.modalBtn, styles.modalBtnSecondary]} onPress={handleReset}>
                     <Ionicons name="refresh" size={18} color="#555" style={{ marginRight: 4 }} />
@@ -470,7 +450,6 @@ const styles = StyleSheet.create({
   svgWrapper: { width: CANVAS_WIDTH, height: CANVAS_HEIGHT, justifyContent: 'center', alignItems: 'center' },
   svgBorderContainer: { backgroundColor: 'white', borderRadius: 30, elevation: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 10 },
   
-  // Feature #7 Layout Graphics Extensions
   successContent: { position: 'absolute', backgroundColor: 'white', padding: 25, borderRadius: 35, alignItems: 'center', elevation: 25, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 15, width: isTablet ? 450 : '88%', zIndex: 30 },
   rewardTitle: { fontSize: normalize(14), fontWeight: '900', color: '#141414', textAlign: 'center' },
   rewardSubtitle: { fontSize: normalize(10), color: '#666', textAlign: 'center', marginTop: 4, paddingHorizontal: 10, lineHeight: 14 },
