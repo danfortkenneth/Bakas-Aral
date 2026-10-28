@@ -74,7 +74,13 @@ export default function TeacherScreen() {
           text: lang === 'ph' ? 'Oo' : 'Yes', 
           style: 'destructive',
           onPress: async () => {
-            try { await signOut(auth); router.replace('/login'); } catch (error: any) { Alert.alert("Error", error.message); }
+            try { 
+              await signOut(auth); 
+              // UPDATED: Awtomatikong lilipat sa User Selection sa halip na login lang
+              router.replace('/(auth)/user-selection'); 
+            } catch (error: any) { 
+              Alert.alert("Error", error.message); 
+            }
           }
         }
       ]
@@ -248,7 +254,7 @@ export default function TeacherScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* --- LANGUAGE SETTINGS CARD (IBINALIK) --- */}
+        {/* --- LANGUAGE SETTINGS CARD --- */}
         <View style={styles.settingsList}>
           <TouchableOpacity style={styles.settingRow} onPress={() => setLang(lang === 'ph' ? 'en' : 'ph')}>
             <View style={{flexDirection:'row', alignItems:'center'}}>

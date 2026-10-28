@@ -8,7 +8,7 @@ import {
   Dimensions 
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useLanguage } from '../_layout'; // Import global language
+import { useLanguage } from '../_layout'; 
 
 const { width } = Dimensions.get('window');
 const isTablet = width >= 768;
@@ -21,10 +21,8 @@ export default function UserSelection() {
   const router = useRouter();
   const { lang } = useLanguage(); 
   
-  // 1. Idinagdag ang 'parent' sa type definition ng state
   const [selectedRole, setSelectedRole] = useState<'teacher' | 'admin' | 'parent' | null>(null);
 
-  // 2. Idinagdag ang translations para sa Parent / Magulang
   const content = {
     en: {
       sub: "CREATE AN ACCOUNT",
@@ -54,15 +52,12 @@ export default function UserSelection() {
 
   const t = content[lang];
 
-  // --- ETO YUNG UPDATED ROUTING LOGIC ---
   const handleContinue = () => {
     if (selectedRole === 'parent') {
-      // Rekta sa iyong parent dashboard page
       router.push('/parent-dashboard');
     } else if (selectedRole) {
-      // Para sa Teacher at Admin, dadaan muna sa Signup
       router.push({
-        pathname: '/signup',
+        pathname: '/(auth)/signup',
         params: { role: selectedRole }
       });
     }
@@ -71,7 +66,6 @@ export default function UserSelection() {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.responsiveWrapper}>
-        {/* Header with Progress Bar 1/2 */}
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
             <Text style={{ fontSize: 20 }}>←</Text>
@@ -86,7 +80,6 @@ export default function UserSelection() {
           <Text style={styles.subTitle}>{t.sub}</Text>
           <Text style={styles.mainTitle}>{t.title}</Text>
 
-          {/* --- TEACHER CARD --- */}
           <TouchableOpacity 
             style={[styles.card, selectedRole === 'teacher' && styles.selectedCard]} 
             onPress={() => setSelectedRole('teacher')}
@@ -104,7 +97,6 @@ export default function UserSelection() {
             </View>
           </TouchableOpacity>
 
-          {/* --- ADMIN CARD --- */}
           <TouchableOpacity 
             style={[styles.card, selectedRole === 'admin' && styles.selectedCard]} 
             onPress={() => setSelectedRole('admin')}
@@ -122,7 +114,6 @@ export default function UserSelection() {
             </View>
           </TouchableOpacity>
 
-          {/* --- 3. BAGONG PARENT CARD --- */}
           <TouchableOpacity 
             style={[styles.card, selectedRole === 'parent' && styles.selectedCard]} 
             onPress={() => setSelectedRole('parent')}
@@ -140,7 +131,6 @@ export default function UserSelection() {
             </View>
           </TouchableOpacity>
 
-          {/* Continue Button */}
           <TouchableOpacity 
             disabled={!selectedRole}
             style={[styles.btnContinue, !selectedRole && styles.btnDisabled]} 
@@ -150,7 +140,7 @@ export default function UserSelection() {
           </TouchableOpacity>
         </View>
 
-        <TouchableOpacity onPress={() => router.push('/login')}>
+        <TouchableOpacity onPress={() => router.push('/(auth)/login')}>
           <Text style={styles.footerText}>
             {t.login.split('?')[0]}? <Text style={styles.loginLink}>{t.login.split('?')[1]}</Text>
           </Text>
@@ -174,9 +164,9 @@ const styles = StyleSheet.create({
   card: { 
     flexDirection: 'row', 
     backgroundColor: 'white', 
-    padding: 15, // Binabaan nang bahagya mula 20 para magkasya ang 3 cards sa screen
+    padding: 15, 
     borderRadius: 25, 
-    marginBottom: 12, // Binabaan mula 15 para hindi masyadong siksik pababa
+    marginBottom: 12, 
     alignItems: 'center', 
     elevation: 2, 
     borderWidth: 2, 

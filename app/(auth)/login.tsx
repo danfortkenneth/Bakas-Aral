@@ -17,10 +17,9 @@ import {
 import { useRouter } from 'expo-router';
 import { useLanguage } from '../_layout'; 
 
-// 1. IMPORT FIREBASE (Added db, doc, getDoc, setDoc, and signOut)
 import { auth, db } from '../../lib/firebase';
-import { signInWithEmailAndPassword, signOut } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { signInWithEmailAndPassword, signOut, sendPasswordResetEmail } from 'firebase/auth';
+import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -36,35 +35,34 @@ export default function LoginPage() {
   const router = useRouter();
   const { lang } = useLanguage();
   
-  // States
   const [role, setRole] = useState<'teacher' | 'admin'>('teacher');
+  const [employeeId, setEmployeeId] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [adminKey, setAdminKey] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const DEV_SECRET_KEY = "BAKAS_DEV_2026"; 
+  const DEV_SECRET_KEY = process.env.EXPO_PUBLIC_ADMIN_KEY || "BAKAS_DEV_2026"; 
 
   const handleLogin = async () => {
-    if (!email || !password) {
+    // 1. INPUT VALIDATIONS
+    if (role === 'teacher' && (!employeeId.trim() || !password)) {
       Alert.alert(
         lang === 'en' ? "Missing Info" : "Kulang sa Detalye", 
-        lang === 'en' ? "Please enter both email and password." : "Paki-lagay ang email at password."
+        lang === 'en' ? "Please enter both Employee ID and password." : "Pakilagay ang iyong Employee ID at password."
       );
       return;
     }
 
-    // --- NEU EMAIL VALIDATION SA LOGIN FOR TEACHERS ---
-    if (role === 'teacher' && !email.toLowerCase().endsWith('@neu.edu.ph')) {
+    if (role === 'admin' && (!email.trim() || !password)) {
       Alert.alert(
-        lang === 'en' ? "Access Denied" : "Hindi Pinayagan",
-        lang === 'en' ? "Only @neu.edu.ph emails are allowed to login as teacher." : "Tanging @neu.edu.ph na mga email lamang ang pwedeng mag-login bilang guro."
+        lang === 'en' ? "Missing Info" : "Kulang sa Detalye", 
+        lang === 'en' ? "Please enter both Admin email and password." : "Pakilagay ang Admin email at password."
       );
       return;
     }
 
-    // Admin Key Check
     if (role === 'admin' && adminKey !== DEV_SECRET_KEY) {
       Alert.alert("Error", lang === 'en' ? "Invalid Admin Secret Key!" : "Maling Secret Key para sa Admin!");
       return;
@@ -72,17 +70,63 @@ export default function LoginPage() {
 
     setLoading(true);
     try {
-      const userCredential = await signInWithEmailAndPassword(auth, email.trim(), password);
+      let targetEmail = email.trim();
+
+      // 2. TEACHER LOGIN logic VIA EMPLOYEE ID + WHITELIST VERIFICATION
+      if (role === 'teacher') {
+        const cleanEmployeeId = employeeId.trim().toUpperCase();
+
+        // A. I-verify kung nasa allowed_teachers whitelist ang ID
+        const allowedDocRef = doc(db, 'allowed_teachers', cleanEmployeeId);
+        const allowedSnap = await getDoc(allowedDocRef);
+
+        if (!allowedSnap.exists()) {
+          Alert.alert(
+            lang === 'en' ? "Access Denied" : "Hindi Pinayagan",
+            lang === 'en' ? "Your Employee ID is not on the official NEU faculty whitelist." : "Ang iyong Employee ID ay wala sa opisyal na talaan ng mga guro ng NEU."
+          );
+          setLoading(false);
+          return;
+        }
+
+        // B. Hanapin ang registered user account gamit ang Employee ID
+        const usersRef = collection(db, "users");
+        const q = query(usersRef, where("employeeId", "==", cleanEmployeeId));
+        const querySnap = await getDocs(q);
+
+        if (querySnap.empty) {
+          Alert.alert(
+            lang === 'en' ? "Account Not Found" : "Hindi Nahanap",
+            lang === 'en' ? "No account registered with this Employee ID. Please sign-up first." : "Walang account na nakarehistro sa Employee ID na ito. Mag-register muna."
+          );
+          setLoading(false);
+          return;
+        }
+
+        const teacherUserDoc = querySnap.docs[0].data();
+        targetEmail = teacherUserDoc.email;
+
+        // C. Institutional Domain Security Check
+        if (!targetEmail.toLowerCase().endsWith('@neu.edu.ph')) {
+          Alert.alert(
+            lang === 'en' ? "Access Denied" : "Hindi Pinayagan",
+            lang === 'en' ? "Only @neu.edu.ph institutional accounts are allowed." : "Tanging @neu.edu.ph na mga email lamang ang pwedeng gamitin."
+          );
+          setLoading(false);
+          return;
+        }
+      }
+
+      // 3. FIREBASE AUTHENTICATION LOGIN
+      const userCredential = await signInWithEmailAndPassword(auth, targetEmail, password);
       const user = userCredential.user;
 
-      // --- BAGONG IMPLEMENTASYON: CHECK USER ROLE AT APPROVAL STATUS MULA SA FIRESTORE ---
       const userDocRef = doc(db, "users", user.uid);
       const userDocSnap = await getDoc(userDocRef);
 
       if (userDocSnap.exists()) {
         const userData = userDocSnap.data();
 
-        // Siguraduhin na tugma ang role na pinili sa database role
         if (userData.role !== role) {
           await signOut(auth);
           Alert.alert(
@@ -93,7 +137,6 @@ export default function LoginPage() {
           return;
         }
 
-        // Kung guro, siguraduhing approved na ng admin
         if (userData.role === 'teacher' && userData.status === 'pending') {
           await signOut(auth);
           Alert.alert(
@@ -103,39 +146,13 @@ export default function LoginPage() {
           setLoading(false);
           return;
         }
-
-        // --- DITO MAGAGANAP ANG RESET SA DASHBOARD SESSIONS NG PARTIKULAR NA GURO ---
-        if (userData.role === 'teacher') {
-          try {
-            // Gumagamit na ng account-specific document id para maiwasan ang overlap sa ibang guro
-            const activeSessionRef = doc(db, 'sessions', `active_student_${user.uid}`);
-            await setDoc(activeSessionRef, {
-              studentId: null,
-              studentName: '---',
-              teacherId: user.uid,
-              updatedAt: new Date().toISOString()
-            }, { merge: true });
-          } catch (sessionError) {
-            console.log("Error handling personal session document initialization:", sessionError);
-          }
-        }
-
-      } else {
-        // Kung walang record sa Firestore ngunit may auth record (safety fallback)
-        if (role === 'teacher') {
-          await signOut(auth);
-          Alert.alert("Error", lang === 'en' ? "User profile record not found." : "Hindi mahanap ang record ng iyong profile.");
-          setLoading(false);
-          return;
-        }
       }
 
-      // Direstong pasok sa tabs kapag pumasa sa validations
       router.replace('/(tabs)');
     } catch (error: any) {
       let errorMessage = error.message;
       if (error.code === 'auth/invalid-credential') {
-        errorMessage = lang === 'en' ? "Invalid email or password." : "Maling email o password.";
+        errorMessage = lang === 'en' ? "Invalid credentials or password." : "Maling Employee ID o password.";
       } else if (error.code === 'auth/user-not-found') {
         errorMessage = lang === 'en' ? "Account not found." : "Hindi mahanap ang account.";
       }
@@ -146,37 +163,68 @@ export default function LoginPage() {
     }
   };
 
+  const handleForgotPassword = async () => {
+    if (role === 'teacher' && !employeeId.trim()) {
+      Alert.alert("Info", lang === 'en' ? "Please enter your Employee ID first." : "Pakilagay muna ang iyong Employee ID.");
+      return;
+    }
+
+    try {
+      let targetEmail = email.trim();
+
+      if (role === 'teacher') {
+        const cleanEmployeeId = employeeId.trim().toUpperCase();
+        const usersRef = collection(db, "users");
+        const q = query(usersRef, where("employeeId", "==", cleanEmployeeId));
+        const querySnap = await getDocs(q);
+
+        if (querySnap.empty) {
+          Alert.alert("Error", lang === 'en' ? "Employee ID not found." : "Hindi mahanap ang Employee ID.");
+          return;
+        }
+        targetEmail = querySnap.docs[0].data().email;
+      }
+
+      await sendPasswordResetEmail(auth, targetEmail);
+      Alert.alert("Success", lang === 'en' ? `Password reset link sent to registered email (${targetEmail})!` : `Naipadala na ang password reset link sa nakarehistrong email (${targetEmail})!`);
+    } catch (err: any) {
+      Alert.alert("Error", err.message);
+    }
+  };
+
   const content = {
     en: {
-      welcome: "WELCOME BACK",
-      title: "Log-in to NEU-Bakás",
+      welcome: "FACULTY & ADMIN PORTAL",
+      title: "Sign in with Institutional Account",
       teacher: "Teacher",
       admin: "Admin",
-      labelEmail: "EMAIL",
+      labelEmpId: "EMPLOYEE / FACULTY ID",
+      labelEmail: "ADMIN EMAIL",
       labelPass: "PASSWORD",
       labelKey: "SECRET ADMIN KEY",
-      placeholderEmail: "name@neu.edu.ph",
+      placeholderEmpId: "e.g. NEU-2026-001",
+      placeholderEmail: "admin@neu.edu.ph",
       placeholderKey: "Enter dev code",
       remember: "Remember me",
-      forgot: "Forgot?",
-      btn: "Enter",
-      or: "OR USE",
+      forgot: "Forgot Password?",
+      btn: "Sign-in to Portal",
       noAccount: "Don't have an account? Sign-up"
     },
     ph: {
-      welcome: "MALIGAYANG PAGBABALIK",
-      title: "Mag-login sa NEU-Bakás",
+      welcome: "FACULTY & ADMIN PORTAL",
+      title: "Mag-login sa Institutional Account",
       teacher: "Guro",
       admin: "Admin",
-      labelEmail: "EMAIL",
+      labelEmpId: "EMPLOYEE / FACULTY ID",
+      labelEmail: "ADMIN EMAIL",
       labelPass: "PASSWORD",
       labelKey: "SECRET ADMIN KEY",
-      placeholderEmail: "pangalan@neu.edu.ph",
+      placeholderEmpId: "Hal: NEU-2026-001",
+      placeholderEmail: "admin@neu.edu.ph",
       placeholderKey: "Ilagay ang dev code",
       remember: "Tandaan ako",
       forgot: "Nakalimutan?",
-      btn: "Pumasok",
-      or: "O GAMITIN",
+      btn: "Pumasok sa Portal",
       noAccount: "Wala pang account? Sign-up"
     }
   };
@@ -196,7 +244,7 @@ export default function LoginPage() {
               <Text style={styles.welcomeText}>{t.welcome}</Text>
               <Text style={styles.mainTitle}>{t.title}</Text>
 
-              {/* Role Switcher */}
+              {/* ROLE SWITCHER */}
               <View style={styles.roleContainer}>
                 <TouchableOpacity 
                   style={[styles.roleTab, role === 'teacher' && styles.roleActive]} 
@@ -215,20 +263,32 @@ export default function LoginPage() {
                 </TouchableOpacity>
               </View>
 
-              {/* Email Input */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.label}>{t.labelEmail}</Text>
-                <TextInput 
-                  style={styles.input} 
-                  placeholder={t.placeholderEmail} 
-                  value={email}
-                  onChangeText={setEmail}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                />
-              </View>
+              {/* INPUT FIELDS BASED ON ROLE */}
+              {role === 'teacher' ? (
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>{t.labelEmpId}</Text>
+                  <TextInput 
+                    style={styles.input} 
+                    placeholder={t.placeholderEmpId} 
+                    value={employeeId}
+                    onChangeText={setEmployeeId}
+                    autoCapitalize="characters"
+                  />
+                </View>
+              ) : (
+                <View style={styles.inputGroup}>
+                  <Text style={styles.label}>{t.labelEmail}</Text>
+                  <TextInput 
+                    style={styles.input} 
+                    placeholder={t.placeholderEmail} 
+                    value={email}
+                    onChangeText={setEmail}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                  />
+                </View>
+              )}
 
-              {/* Password Input */}
               <View style={styles.inputGroup}>
                 <Text style={styles.label}>{t.labelPass}</Text>
                 <TextInput 
@@ -240,7 +300,6 @@ export default function LoginPage() {
                 />
               </View>
 
-              {/* Conditional Admin Key Input */}
               {role === 'admin' && (
                 <View style={styles.inputGroup}>
                   <Text style={[styles.label, {color: '#F77F67'}]}>{t.labelKey}</Text>
@@ -261,12 +320,11 @@ export default function LoginPage() {
                   </View>
                   <Text style={styles.rememberText}>{t.remember}</Text>
                 </TouchableOpacity>
-                <TouchableOpacity>
+                <TouchableOpacity onPress={handleForgotPassword}>
                   <Text style={styles.forgotText}>{t.forgot}</Text>
                 </TouchableOpacity>
               </View>
 
-              {/* Login Button */}
               <TouchableOpacity 
                 style={[styles.btnLogin, loading && { opacity: 0.7 }]} 
                 activeOpacity={0.8}
@@ -276,27 +334,11 @@ export default function LoginPage() {
                 {loading ? (
                   <ActivityIndicator color="white" />
                 ) : (
-                  <Text style={styles.btnLoginText}>{t.btn}</Text>
+                  <Text style={styles.btnLoginText}>💼 {t.btn}</Text>
                 )}
               </TouchableOpacity>
 
-              <View style={styles.dividerContainer}>
-                <View style={styles.line} />
-                <Text style={styles.orText}>{t.or}</Text>
-                <View style={styles.line} />
-              </View>
-
-              {/* Social Buttons */}
-              <View style={styles.socialRow}>
-                <TouchableOpacity style={styles.socialBtn}>
-                  <Text style={styles.socialBtnText}>G  Google</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.socialBtn}>
-                  <Text style={styles.socialBtnText}>Apple</Text>
-                </TouchableOpacity>
-              </View>
-
-              <TouchableOpacity onPress={() => router.push({ pathname: '/signup', params: { role } })}>
+              <TouchableOpacity onPress={() => router.push({ pathname: '/(auth)/signup', params: { role } })}>
                 <Text style={styles.signupFooter}>
                   {t.noAccount.split('?')[0]}? <Text style={styles.signupLink}>{t.noAccount.split('?')[1]}</Text>
                 </Text>
@@ -316,10 +358,10 @@ const styles = StyleSheet.create({
   backBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'white', justifyContent: 'center', alignItems: 'center', marginTop: 20, elevation: 2 },
   content: { marginTop: 30 },
   welcomeText: { fontSize: normalize(10), color: '#999', fontWeight: '700', letterSpacing: 1.5 },
-  mainTitle: { fontSize: normalize(26), fontWeight: '900', color: '#333', marginTop: 5, marginBottom: 25 },
+  mainTitle: { fontSize: normalize(22), fontWeight: '900', color: '#333', marginTop: 5, marginBottom: 25 },
   roleContainer: { flexDirection: 'row', backgroundColor: 'white', borderRadius: 30, padding: 5, marginBottom: 25, borderWidth: 1, borderColor: '#EEE' },
   roleTab: { flex: 1, height: 45, justifyContent: 'center', alignItems: 'center', borderRadius: 25 },
-  roleActive: { backgroundColor: '#F77F67' },
+  roleActive: { backgroundColor: '#1E3A8A' },
   roleText: { color: '#999', fontWeight: '700', fontSize: normalize(14) },
   roleTextActive: { color: 'white' },
   inputGroup: { marginBottom: 15 },
@@ -327,18 +369,12 @@ const styles = StyleSheet.create({
   input: { backgroundColor: 'white', height: isTablet ? 60 : SCREEN_HEIGHT * 0.07, minHeight: 50, borderRadius: 30, paddingHorizontal: 20, fontSize: normalize(15), borderWidth: 1, borderColor: '#F0F0F0' },
   rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginVertical: 10 },
   checkboxRow: { flexDirection: 'row', alignItems: 'center' },
-  checkbox: { width: 18, height: 18, borderRadius: 4, borderWidth: 1, borderColor: '#F77F67', marginRight: 8, justifyContent: 'center', alignItems: 'center' },
-  checkboxActive: { backgroundColor: '#F77F67' },
+  checkbox: { width: 18, height: 18, borderRadius: 4, borderWidth: 1, borderColor: '#1E3A8A', marginRight: 8, justifyContent: 'center', alignItems: 'center' },
+  checkboxActive: { backgroundColor: '#1E3A8A' },
   rememberText: { fontSize: normalize(13), color: '#666' },
-  forgotText: { fontSize: normalize(13), color: '#F77F67', fontWeight: '700' },
-  btnLogin: { backgroundColor: '#F77F67', height: isTablet ? 65 : SCREEN_HEIGHT * 0.075, minHeight: 60, borderRadius: 30, justifyContent: 'center', alignItems: 'center', marginTop: 20, elevation: 4 },
-  btnLoginText: { color: 'white', fontSize: normalize(18), fontWeight: 'bold' },
-  dividerContainer: { flexDirection: 'row', alignItems: 'center', marginVertical: 30 },
-  line: { flex: 1, height: 1, backgroundColor: '#EEE' },
-  orText: { marginHorizontal: 10, fontSize: normalize(10), color: '#BBB', fontWeight: '700' },
-  socialRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  socialBtn: { width: '48%', height: 55, backgroundColor: 'white', borderRadius: 30, justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#EEE' },
-  socialBtnText: { fontWeight: '700', color: '#333', fontSize: normalize(14) },
+  forgotText: { fontSize: normalize(13), color: '#1E3A8A', fontWeight: '700' },
+  btnLogin: { backgroundColor: '#1E3A8A', height: isTablet ? 65 : SCREEN_HEIGHT * 0.075, minHeight: 60, borderRadius: 30, justifyContent: 'center', alignItems: 'center', marginTop: 20, elevation: 4 },
+  btnLoginText: { color: 'white', fontSize: normalize(16), fontWeight: 'bold' },
   signupFooter: { textAlign: 'center', marginTop: 30, color: '#777', fontSize: normalize(14), marginBottom: 40 },
-  signupLink: { color: '#F77F67', fontWeight: 'bold' }
+  signupLink: { color: '#1E3A8A', fontWeight: 'bold' }
 });

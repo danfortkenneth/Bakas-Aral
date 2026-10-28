@@ -1,5 +1,6 @@
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { createContext, useState, useContext, useEffect, useRef } from 'react';
+import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { auth, db } from '../lib/firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { doc, onSnapshot } from 'firebase/firestore';
@@ -59,6 +60,7 @@ export default function RootLayout() {
         return;
       }
 
+      // REAL-TIME FIRESTORE LISTENER
       const userRef = doc(db, 'users', user.uid);
       unsubscribeUserDoc = onSnapshot(
         userRef,
@@ -80,7 +82,7 @@ export default function RootLayout() {
           setLoading(false);
         },
         (error) => {
-          console.log('Teacher profile listener handled gracefully:', error.message);
+          console.log('Realtime listener error handled gracefully:', error.message);
           setLoading(false);
         }
       );
@@ -92,18 +94,36 @@ export default function RootLayout() {
     };
   }, []);
 
+  // AUTOMATIC AUTH & ROLE-SWITCH NAVIGATION GUARD
   useEffect(() => {
     if (loading) return;
 
-    const root = segments[0];
-    const screen = segments[1];
-    const inTabs = root === '(tabs)';
-    const isParentPractice = inTabs && screen === 'bakas';
+    const rootGroup = segments[0];
+    const isAuthRoute = !rootGroup || rootGroup === '(auth)';
+    const inTabs = rootGroup === '(tabs)';
 
-    if (!firebaseUser && inTabs && !isParentPractice) {
-      router.replace('/');
+    // 1. Kapag hindi naka-login (o nag-logout) at nasa loob ng tabs:
+    // Rekta sa User Selection screen para malayang makapili uli ng Role (Teacher/Admin/Parent)
+    if (!firebaseUser && inTabs) {
+      router.replace('/(auth)/user-selection');
+      return;
     }
-  }, [firebaseUser, loading, segments, router]);
+
+    // 2. Kapag naka-login, approved ang status, at nagtatangkang pumunta sa auth/welcome screen:
+    // Automatic redirect papuntang tabs
+    if (firebaseUser && isAuthRoute && userData?.status === 'approved') {
+      router.replace('/(tabs)');
+    }
+  }, [firebaseUser, userData, loading, segments, router]);
+
+  // Visual Loader habang nagse-sync sa Firebase
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#F77F67" />
+      </View>
+    );
+  }
 
   return (
     <LanguageContext.Provider value={{ lang, setLang }}>
@@ -120,3 +140,12 @@ export default function RootLayout() {
     </LanguageContext.Provider>
   );
 }
+
+const styles = StyleSheet.create({
+  loadingContainer: {
+    flex: 1,
+    backgroundColor: '#FFFBEB',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+});
