@@ -1,4 +1,4 @@
-import React from 'react'; // Tinanggal ang useState dito
+import React from 'react';
 import { 
   StyleSheet, 
   Text, 
@@ -10,15 +10,18 @@ import {
   Platform
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useLanguage } from './_layout'; // Import ang global context
+import { useLanguage } from './_layout';
 
 const { width, height } = Dimensions.get('window');
 
-// Bagong Scale Font logic para mag-fit sa Phones at Tablets nang hindi sumasabog ang laki
+// LIGTAS NA SCALE FONT FIX PARA SA WEB AT MOBILE
 const isTablet = width >= 768;
 const scaleFont = (size: number) => {
+  // Sa web browser, huwag hayaang bumaba sa original size ang font
+  if (Platform.OS === 'web') {
+    return isTablet ? size * 1.2 : size;
+  }
   const scaled = size * (width / 375);
-  // Kung tablet, lagyan ng cap/limit para hindi maging dambuhala ang text
   if (isTablet) {
     return size * 1.3; 
   }
@@ -27,11 +30,8 @@ const scaleFont = (size: number) => {
 
 export default function WelcomePage() {
   const router = useRouter();
-  
-  // 1. Gamitin ang Global Context sa halip na local useState
   const { lang, setLang } = useLanguage();
 
-  // 2. Content Dictionary (Nanatiling pareho pero naka-link na sa global lang)
   const content = {
     en: {
       pill: "● FOR PRE-KINDERGARTEN",
@@ -63,7 +63,6 @@ export default function WelcomePage() {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Wrapper para sa Tablet at Big Screens para hindi mag-stretch nang buong-buo */}
       <View style={styles.responsiveWrapper}>
         {/* LANGUAGE SWITCHER */}
         <View style={styles.langSwitcher}>
@@ -97,7 +96,7 @@ export default function WelcomePage() {
 
         {/* MAIN CONTENT */}
         <View style={styles.mainContent}>
-          <View>
+          <View style={{ width: '100%' }}>
             <Text style={styles.titleBlack}>{t.title1}</Text>
             <Text style={styles.titleOrange}>{t.title2}</Text>
             <Text style={styles.description}>{t.desc}</Text>
@@ -144,38 +143,38 @@ export default function WelcomePage() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FFFBEB', alignItems: 'center', justifyContent: 'center' },
-  responsiveWrapper: { flex: 1, width: '100%', maxWidth: 550, justifyContent: 'space-between' }, // Sinisiguradong hindi sasabog ang layout sa tablet
+  responsiveWrapper: { flex: 1, width: '100%', maxWidth: 480, justifyContent: 'space-between' },
   langSwitcher: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
-    paddingHorizontal: width * 0.08,
+    paddingHorizontal: 24,
     marginTop: Platform.OS === 'android' ? 40 : 10,
     alignItems: 'center',
     zIndex: 10,
   },
-  langBtn: { padding: 10 },
+  langBtn: { padding: 8 },
   langText: { fontSize: 14, color: '#AAA', fontWeight: 'bold' },
   langActive: { color: '#F77F67' },
   langDivider: { marginHorizontal: 5, color: '#DDD' },
-  header: { flex: 0.22, paddingHorizontal: width * 0.08, justifyContent: 'center' },
+  header: { paddingHorizontal: 24, justifyContent: 'center', marginTop: 10 },
   logoRow: { flexDirection: 'row', alignItems: 'center' },
-  mainLogo: { width: width * 0.18, height: width * 0.18, maxWidth: 80, maxHeight: 80 },
-  brandTextContainer: { marginLeft: 12 },
+  mainLogo: { width: 64, height: 64 },
+  brandTextContainer: { marginLeft: 12, flexShrink: 1 },
   brandTitle: { fontSize: scaleFont(12), color: '#999', fontWeight: '600', letterSpacing: 1.5 },
   brandSub: { fontSize: scaleFont(20), fontWeight: 'bold', color: '#333' },
   pill: { backgroundColor: 'white', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, alignSelf: 'flex-start', marginTop: 15, borderWidth: 1, borderColor: '#F0F0F0' },
   pillText: { fontSize: scaleFont(10), color: '#666', fontWeight: '700' },
-  mainContent: { flex: 0.48, paddingHorizontal: width * 0.08, justifyContent: 'center' },
-  titleBlack: { fontSize: scaleFont(38), fontWeight: '800', color: '#222' },
-  titleOrange: { fontSize: scaleFont(38), fontWeight: '800', color: '#F7A072', marginTop: -5 },
-  description: { marginTop: 15, fontSize: scaleFont(14), color: '#666', lineHeight: scaleFont(22) },
-  featureRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 30 },
-  featureCircle: { width: isTablet ? 110 : width * 0.25, height: isTablet ? 110 : width * 0.25, borderRadius: 20, backgroundColor: 'white', borderWidth: 1, borderColor: '#F0F0F0', justifyContent: 'center', alignItems: 'center', elevation: 3 },
+  mainContent: { flex: 1, paddingHorizontal: 24, justifyContent: 'center', marginVertical: 20 },
+  titleBlack: { fontSize: scaleFont(36), fontWeight: '800', color: '#222' },
+  titleOrange: { fontSize: scaleFont(36), fontWeight: '800', color: '#F7A072', marginTop: -5 },
+  description: { marginTop: 12, fontSize: scaleFont(14), color: '#666', lineHeight: Platform.OS === 'web' ? 22 : scaleFont(22) },
+  featureRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 24 },
+  featureCircle: { width: 90, height: 90, borderRadius: 20, backgroundColor: 'white', borderWidth: 1, borderColor: '#F0F0F0', justifyContent: 'center', alignItems: 'center', elevation: 2 },
   featLabel: { fontSize: scaleFont(9), fontWeight: '800', color: '#AAA', marginTop: 4 },
-  footer: { flex: 0.3, paddingHorizontal: width * 0.08, justifyContent: 'flex-end', paddingBottom: height * 0.04 },
-  btnStart: { backgroundColor: '#F77F67', height: isTablet ? 65 : height * 0.07, borderRadius: 35, justifyContent: 'center', alignItems: 'center' },
+  footer: { paddingHorizontal: 24, justifyContent: 'flex-end', paddingBottom: 24 },
+  btnStart: { backgroundColor: '#F77F67', height: 52, borderRadius: 35, justifyContent: 'center', alignItems: 'center' },
   btnStartText: { color: 'white', fontSize: scaleFont(18), fontWeight: 'bold' },
-  btnLogin: { backgroundColor: 'white', height: isTablet ? 65 : height * 0.07, borderRadius: 35, justifyContent: 'center', alignItems: 'center', marginTop: 12, borderWidth: 1, borderColor: '#EEE' },
+  btnLogin: { backgroundColor: 'white', height: 52, borderRadius: 35, justifyContent: 'center', alignItems: 'center', marginTop: 10, borderWidth: 1, borderColor: '#EEE' },
   btnLoginText: { color: '#333', fontSize: scaleFont(16), fontWeight: 'bold' },
-  termsText: { textAlign: 'center', fontSize: scaleFont(10), color: '#BBB', marginTop: 15 }
+  termsText: { textAlign: 'center', fontSize: scaleFont(10), color: '#BBB', marginTop: 12 }
 });

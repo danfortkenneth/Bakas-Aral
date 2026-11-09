@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { PARENT_QR_FLAG } from './classroom';
+
+export const PARENT_QR_FLAG = "BAKAS_ARAL_PARENT_SYNC";
 
 export const PARENT_STORAGE = {
   active: '@parent_active_child',
@@ -8,6 +9,7 @@ export const PARENT_STORAGE = {
 };
 
 export type ParentProgress = {
+  studentId?: string;
   nickname: string;
   avatar: string;
   accuracy: string;
@@ -18,7 +20,6 @@ export type ParentProgress = {
   letters?: { char: string; accuracy: number }[];
   unlockedStickers?: string[];
   starsEarned?: number;
-  studentId?: string;
 };
 
 export function parseParentQR(rawData: string): ParentProgress {
@@ -28,17 +29,17 @@ export function parseParentQR(rawData: string): ParentProgress {
   }
 
   return {
+    studentId: parsed.studentId || undefined,
     nickname: parsed.nickname || 'Unknown',
     avatar: parsed.avatar || 'lion',
     accuracy: parsed.accuracy || '0%',
-    duration: parsed.duration || '0m',
+    duration: parsed.duration || '0s',
     timestamp: parsed.timestamp || new Date().toLocaleString(),
     school: parsed.school || 'NEU Pre-K Division',
     traces: parsed.traces || 0,
     letters: parsed.letters || [],
     unlockedStickers: parsed.unlockedStickers || [],
     starsEarned: parsed.starsEarned || 0,
-    studentId: parsed.studentId,
   };
 }
 
@@ -61,9 +62,6 @@ export async function saveParentQRPayload(record: ParentProgress) {
   const history = [record, ...current.history].slice(0, 30);
   const stickerSet = new Set(current.stickers);
 
-  (record.unlockedStickers || []).forEach((item) => {
-    stickerSet.add(`✍️ Titik ${item}`);
-  });
   if (record.nickname) {
     stickerSet.add(`${record.avatar || 'lion'} ${record.nickname}`);
   }

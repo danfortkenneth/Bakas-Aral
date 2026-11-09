@@ -17,7 +17,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useLanguage } from '../_layout'; 
 
 import { auth, db } from '../../lib/firebase'; 
-import { createUserWithEmailAndPassword, signOut } from 'firebase/auth';
+import { createUserWithEmailAndPassword, updateProfile, signOut } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 const { width } = Dimensions.get('window');
@@ -47,74 +47,48 @@ export default function Signup() {
 
   const content = {
     en: {
-      sub: "CREATE AN ACCOUNT",
-      title: "Faculty Registration",
+      sub: "ACCOUNT CREATION",
+      title: currentRole === 'admin' ? "Administrator Registration" : "Faculty Registration",
       labelEmpId: "EMPLOYEE / FACULTY ID",
       labelName: "FULL NAME",
       labelEmail: "INSTITUTIONAL EMAIL",
       labelPass: "PASSWORD",
       labelSchool: "SCHOOL / DIVISION",
       labelKey: "SECRET ADMIN KEY",
-      placeholderEmpId: "e.g. 20-11761-573",
-      placeholderName: "Full Name",
+      placeholderEmpId: "Enter Employee ID",
+      placeholderName: "Enter Full Name",
       placeholderEmail: "name@neu.edu.ph",
-      placeholderPass: "At least 8 characters",
-      placeholderSchool: "New Era University Pre-K",
-      placeholderKey: "Enter dev code",
+      placeholderPass: "At least 6 characters",
+      placeholderSchool: "Enter School or Division",
+      placeholderKey: "Enter Admin Key",
       terms: "I agree to the Terms and Privacy Policy.",
       btn: "Create Account",
       footer: "Already have an account? Log-in",
-      errorKey: "Invalid Secret Key for Admin!",
-      wait: "Please fill in all required fields.",
-      successTitle: "Success!",
-      successMsg: "Account created! Please wait for Admin approval before logging in.",
-      emailError: "Only @neu.edu.ph emails are allowed for teachers!",
-      invalidEmpId: "Employee ID is not in the official NEU faculty whitelist.",
-      emailMismatch: "Email does not match the registered faculty record for this Employee ID."
-    },
-    ph: {
-      sub: "LUMIKHA NG ACCOUNT",
-      title: "Rehistro ng Guro",
-      labelEmpId: "EMPLOYEE / FACULTY ID",
-      labelName: "BUONG PANGALAN",
-      labelEmail: "INSTITUTIONAL EMAIL",
-      labelPass: "PASSWORD",
-      labelSchool: "PANGALAN NG PAARALAN",
-      labelKey: "SECRET ADMIN KEY",
-      placeholderEmpId: "Hal: 20-11761-573",
-      placeholderName: "Liza Santos",
-      placeholderEmail: "liza@neu.edu.ph",
-      placeholderPass: "Hindi bababa sa 8 letra",
-      placeholderSchool: "New Era University Pre-K",
-      placeholderKey: "Ilagay ang dev code",
-      terms: "Sumasang-ayon ako sa Terms at Privacy Policy.",
-      btn: "Buoin ang Account",
-      footer: "May account na? Mag-login",
-      errorKey: "Maling Secret Key para sa Admin!",
-      wait: "Paki-fill up ang lahat ng kinakailangang boxes.",
-      successTitle: "Tagumpay!",
-      successMsg: "Gawa na ang account! Mangyaring hintayin ang pag-apruba ng Admin bago mag-login.",
-      emailError: "Tanging @neu.edu.ph na email lamang ang tinatanggap para sa mga guro!",
-      invalidEmpId: "Ang Employee ID ay wala sa opisyal na talaan ng mga guro ng NEU.",
-      emailMismatch: "Ang email ay hindi tumutugma sa nakatalang record para sa Employee ID na ito."
+      errorKey: "Invalid Secret Key for Admin authorization.",
+      wait: "Please complete all required fields.",
+      successTitle: "Registration Successful",
+      successMsg: "Account created successfully. Please await Administrator approval before logging in.",
+      emailError: "Only valid @neu.edu.ph institutional email addresses are permitted for faculty members.",
+      invalidEmpId: "Employee ID was not found in the official NEU faculty directory.",
+      emailMismatch: "Provided email does not match the record associated with this Employee ID."
     }
   };
 
-  const t = content[lang];
+  const t = content.en;
 
   const handleSignup = async () => {
     if (!email.trim() || !password || !fullName.trim()) {
-      Alert.alert("Wait lang!", t.wait);
+      Alert.alert("Incomplete Information", t.wait);
       return;
     }
 
     if (currentRole === 'teacher' && !employeeId.trim()) {
-      Alert.alert("Error", lang === 'en' ? "Employee ID is required for Teacher registration." : "Kailangan ang Employee ID para sa pagpaparehistro ng Guro.");
+      Alert.alert("Validation Error", "Employee ID is required for Teacher registration.");
       return;
     }
 
     if (password.length < 6) {
-      Alert.alert("Error", lang === 'en' ? "Password must be at least 6 characters." : "Ang password ay dapat hindi bababa sa 6 na letra.");
+      Alert.alert("Validation Error", "Password must be at least 6 characters long.");
       return;
     }
 
@@ -124,16 +98,16 @@ export default function Signup() {
     }
 
     if (currentRole === 'admin' && adminKey !== DEV_SECRET_KEY) {
-      Alert.alert("Error", t.errorKey);
+      Alert.alert("Access Denied", t.errorKey);
       return;
     }
 
     setLoading(true);
 
     try {
-      const cleanEmployeeId = employeeId.trim();
+      const cleanEmployeeId = employeeId.trim().toUpperCase();
 
-      // 1. WHITELIST VERIFICATION SA FIRESTORE (allowed_teachers) WITH ERROR CATCHING
+      // 1. WHITELIST VERIFICATION VIA FIRESTORE (allowed_teachers)
       if (currentRole === 'teacher') {
         let allowedSnap;
         try {
@@ -142,10 +116,8 @@ export default function Signup() {
         } catch (docErr: any) {
           console.error("Firestore Permission Check Error:", docErr);
           Alert.alert(
-            "Permission Error", 
-            lang === 'en' 
-              ? "Database access denied. Please check Firestore Security Rules." 
-              : "Hindi ma-access ang Whitelist database. Naka-block sa Firebase Security Rules."
+            "System Error", 
+            "Database access denied. Please verify system permissions."
           );
           setLoading(false);
           return;
@@ -159,14 +131,12 @@ export default function Signup() {
 
         const allowedData = allowedSnap.data();
 
-        // Check A: Kapag registered na ang ID
         if (allowedData.isRegistered) {
-          Alert.alert("Error", lang === 'en' ? "This Employee ID is already registered." : "Ang Employee ID na ito ay may nakarehistro nang account.");
+          Alert.alert("Registration Error", "This Employee ID is already associated with an existing account.");
           setLoading(false);
           return;
         }
 
-        // Check B: Sub-check sa Email kung nakatala sa whitelist
         if (allowedData.email && allowedData.email.toLowerCase() !== email.trim().toLowerCase()) {
           Alert.alert("Mismatch Error", t.emailMismatch);
           setLoading(false);
@@ -178,7 +148,12 @@ export default function Signup() {
       const userCredential = await createUserWithEmailAndPassword(auth, email.trim(), password);
       const user = userCredential.user;
 
-      // 3. ISULAT LAHAT NG DATA SA FIRESTORE HABANG NAKA-AUTHENTICATE PA
+      // 3. UPDATE FIREBASE AUTH DISPLAY NAME
+      await updateProfile(user, {
+        displayName: fullName.trim()
+      });
+
+      // 4. RECORD USER DATA IN FIRESTORE
       await setDoc(doc(db, "users", user.uid), {
         uid: user.uid,
         employeeId: currentRole === 'teacher' ? cleanEmployeeId : 'ADMIN',
@@ -191,24 +166,11 @@ export default function Signup() {
       });
 
       if (currentRole === 'teacher') {
-        // Mark as registered sa whitelist gamit ang setDoc merge
         const allowedDocRef = doc(db, 'allowed_teachers', cleanEmployeeId);
         await setDoc(allowedDocRef, { isRegistered: true }, { merge: true });
-
-        try {
-          const activeSessionRef = doc(db, 'sessions', `active_student_${user.uid}`);
-          await setDoc(activeSessionRef, {
-            studentId: null,
-            studentName: '---',
-            teacherId: user.uid,
-            updatedAt: new Date().toISOString()
-          }, { merge: true });
-        } catch (sessionError) {
-          console.log("Error initializing session document:", sessionError);
-        }
       }
 
-      // 4. SAKA MAG-SIGNOUT PAGKATAPOS MA-SAVE ANG LAHAT NG DOCUMENTS
+      // 5. SIGN OUT UPON CREATION TO PREVENT PENDING DIRECT ACCESS
       await signOut(auth);
 
       Alert.alert(t.successTitle, t.successMsg);
@@ -217,9 +179,9 @@ export default function Signup() {
     } catch (error: any) {
       let msg = error.message;
       if (error.code === 'auth/email-already-in-use') {
-        msg = lang === 'en' ? "Email address is already in use." : "Ang email na ito ay may nakagamit na.";
+        msg = "This email address is already in use by another account.";
       }
-      Alert.alert("Signup Failed", msg);
+      Alert.alert("Registration Failed", msg);
     } finally {
       setLoading(false);
     }
@@ -245,7 +207,6 @@ export default function Signup() {
               <Text style={styles.subTitle}>{t.sub}</Text>
               <Text style={styles.mainTitle}>{t.title}</Text>
 
-              {/* EMPLOYEE ID INPUT (FOR TEACHERS ONLY) */}
               {currentRole === 'teacher' && (
                 <View style={styles.inputGroup}>
                   <Text style={[styles.label, { color: '#1E3A8A' }]}>{t.labelEmpId}</Text>
@@ -254,7 +215,7 @@ export default function Signup() {
                     placeholder={t.placeholderEmpId} 
                     value={employeeId}
                     onChangeText={setEmployeeId}
-                    autoCapitalize="none"
+                    autoCapitalize="characters"
                   />
                 </View>
               )}

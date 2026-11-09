@@ -1,10 +1,21 @@
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity, SafeAreaView, Dimensions, PixelRatio, ActivityIndicator, Alert } from 'react-native';
+import { 
+  StyleSheet, 
+  Text, 
+  View, 
+  ScrollView, 
+  TouchableOpacity, 
+  SafeAreaView, 
+  Dimensions, 
+  PixelRatio, 
+  ActivityIndicator, 
+  Alert 
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useLanguage } from '../_layout'; 
 import { db, auth } from '../../lib/firebase';
-import { doc, onSnapshot, query, collection, where } from 'firebase/firestore';
+import { doc, onSnapshot, query, collection, where, getDoc } from 'firebase/firestore';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const scale = SCREEN_WIDTH / 375;
@@ -39,30 +50,61 @@ export default function DashboardScreen() {
       return;
     }
 
-    const teacherDocRef = doc(db, "users", currentUser.uid);
-    const unsubscribeTeacher = onSnapshot(teacherDocRef, (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        const currentStudentId = data.activeStudentId || null;
-        
-        setActiveStudentId(currentStudentId);
-        setActiveStudentName(data.activeStudentName || '');
+    let unsubscribeSessions: (() => void) | null = null;
+    let unsubscribeTeacher: (() => void) | null = null;
 
-        if (currentStudentId) {
-          const unsubscribeSessions = listenToRealtimeStats(currentStudentId);
-          return () => unsubscribeSessions();
-        } else {
-          setOverallAccuracy(0);
-          setTimeSpent('0m');
-          setCharStats({});
-          setLoadingStats(false);
+    const checkRoleAndSubscribe = async () => {
+      try {
+        // 1. Kukunin muna ang User Doc para suriin ang Role
+        const userDoc = await getDoc(doc(db, "users", currentUser.uid));
+        
+        if (userDoc.exists()) {
+          const userData = userDoc.data();
+          
+          // Kapag Admin, diretso agad sa Admin screen
+          if (userData?.role === 'admin') {
+            router.replace('/admin-dashboard'); 
+            return;
+          }
         }
-      } else {
+
+        // 2. Kung hindi Admin, itutuloy ang pag-listen sa Teacher/Student setup
+        const teacherDocRef = doc(db, "users", currentUser.uid);
+        unsubscribeTeacher = onSnapshot(teacherDocRef, (docSnap) => {
+          if (docSnap.exists()) {
+            const data = docSnap.data();
+            const currentStudentId = data.activeStudentId || null;
+            
+            setActiveStudentId(currentStudentId);
+            setActiveStudentName(data.activeStudentName || '');
+
+            if (currentStudentId) {
+              if (unsubscribeSessions) unsubscribeSessions();
+              unsubscribeSessions = listenToRealtimeStats(currentStudentId);
+            } else {
+              setOverallAccuracy(0);
+              setTimeSpent('0m');
+              setCharStats({});
+              setLoadingStats(false);
+            }
+          } else {
+            setLoadingStats(false);
+          }
+        });
+
+      } catch (err) {
+        console.error("Error checking role:", err);
         setLoadingStats(false);
       }
-    });
+    };
 
-    return () => unsubscribeTeacher();
+    checkRoleAndSubscribe();
+
+    // Clean-up function para sa listeners kapag nag-unmount ang component
+    return () => {
+      if (unsubscribeTeacher) unsubscribeTeacher();
+      if (unsubscribeSessions) unsubscribeSessions();
+    };
   }, [lang]);
 
   const listenToRealtimeStats = (studentId: string) => {
@@ -221,7 +263,7 @@ export default function DashboardScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FFFBEB' },
-  scrollContent: { paddingHorizontal: '6%', paddingTop: 20, paddingBottom: 110 },
+  scrollContent: { paddingHorizontal: '6%', paddingTop: 20, paddingBottom: 30 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 25 },
   userInfo: { flex: 1 },
   welcomeText: { fontSize: normalize(11), color: '#777', fontWeight: 'bold' },

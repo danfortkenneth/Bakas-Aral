@@ -1,10 +1,30 @@
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity, SafeAreaView, PixelRatio, Dimensions, ActivityIndicator, Alert, Modal, TextInput } from 'react-native';
+import { 
+  StyleSheet, 
+  Text, 
+  View, 
+  ScrollView, 
+  TouchableOpacity, 
+  SafeAreaView, 
+  PixelRatio, 
+  Dimensions, 
+  ActivityIndicator, 
+  Alert, 
+  Modal, 
+  TextInput 
+} from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useLanguage } from '../_layout'; 
 import { useRouter } from 'expo-router'; 
 import { auth, db } from '../../lib/firebase';
-import { doc, updateDoc, onSnapshot } from 'firebase/firestore';
+import { 
+  doc, 
+  updateDoc, 
+  onSnapshot, 
+  collection, 
+  addDoc, 
+  serverTimestamp
+} from 'firebase/firestore';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import QRCode from 'react-native-qrcode-svg';
 
@@ -19,7 +39,15 @@ const ANIMAL_AVATARS = [
   { id: 'dog', emoji: '🐶' }, { id: 'pig', emoji: '🐷' }, { id: 'mouse', emoji: '🐭' },
 ];
 
+interface Student {
+  id: string;
+  fullName: string;
+  avatar: string;
+}
+
 interface PastSession {
+  id?: string;
+  studentId?: string;
   nickname: string;
   avatar: string;
   accuracy: string;
@@ -34,40 +62,105 @@ export default function TeacherScreen() {
   const [role, setRole] = useState<string | null>(null);
   const isAdmin = role === 'admin';
   
+  const [teacherFirstName, setTeacherFirstName] = useState<string>('');
   const [activeStudentAvatar, setActiveStudentAvatar] = useState<string | null>(null); 
   const [updatingSession, setUpdatingSession] = useState(false);
   const [isAvatarModalOpen, setIsAvatarModalOpen] = useState(false);
 
-  // --- LOCAL STATES (Zero-Enrollment Compliant) ---
-  const [tempNickname, setTempNickname] = useState<string>(''); 
-  const [currentSessionNickname, setCurrentSessionNickname] = useState<string>(''); 
-  const [sessionReportData, setSessionReportData] = useState<string>(''); 
+  const [students, setStudents] = useState<Student[]>([]);
+  const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
 
-  // --- RECENT HISTORY MATRIX (RAM Memory Only) ---
+  const [isAddingNewStudent, setIsAddingNewStudent] = useState(false);
+  const [newFullName, setNewFullName] = useState<string>('');
+  const [newSelectedAvatar, setNewSelectedAvatar] = useState<string>('lion');
+
+  const [sessionReportData, setSessionReportData] = useState<string>(''); 
   const [recentSessions, setRecentSessions] = useState<PastSession[]>([]);
   const [selectedPastQR, setSelectedPastQR] = useState<string | null>(null);
 
   useEffect(() => {
-    let unsubscribeSessions: () => void = () => {};
+    let unsubscribeTeacherDoc: () => void = () => {};
+    let unsubscribeStudents: () => void = () => {};
+    let unsubscribeCompletedSessions: () => void = () => {};
+
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
       if (user) {
+        const rawName = user.displayName || user.email?.split('@')[0] || "Guro";
+        const initialFirstName = rawName.trim().split(' ')[0];
+        setTeacherFirstName(initialFirstName);
+
         const teacherRef = doc(db, "users", user.uid);
-        unsubscribeSessions = onSnapshot(teacherRef, (docSnap) => {
+        unsubscribeTeacherDoc = onSnapshot(teacherRef, (docSnap) => {
           if (docSnap.exists()) {
             const data = docSnap.data();
             setRole(data.role || 'teacher');
+            if (data.fullName) {
+              const extractedFirstName = data.fullName.trim().split(' ')[0];
+              setTeacherFirstName(extractedFirstName);
+            }
             setActiveStudentAvatar(data.activeStudentAvatar || null);
+            
+            if (data.activeStudentName) {
+              setSelectedStudent({
+                id: data.activeStudentId || 'N/A',
+                fullName: data.activeStudentName,
+                avatar: data.activeStudentAvatar || 'lion'
+              });
+            }
           }
         });
+
+        const studentsColRef = collection(db, "users", user.uid, "students");
+        unsubscribeStudents = onSnapshot(studentsColRef, (snapshot) => {
+          const loadedStudents: Student[] = snapshot.docs.map(docSnap => ({
+            id: docSnap.id,
+            fullName: docSnap.data().fullName || '',
+            avatar: docSnap.data().avatar || 'lion',
+          }));
+          setStudents(loadedStudents);
+        });
+
+        const historyColRef = collection(db, "users", user.uid, "completed_sessions");
+        unsubscribeCompletedSessions = onSnapshot(historyColRef, (snapshot) => {
+          const loadedHistory: PastSession[] = snapshot.docs.map(docSnap => {
+            const data = docSnap.data();
+            return {
+              id: docSnap.id,
+              studentId: data.studentId,
+              nickname: data.nickname || 'Estudyante',
+              avatar: data.avatar || 'lion',
+              accuracy: data.accuracy || '0%',
+              duration: data.duration || '0s',
+              timestamp: data.timestamp || '',
+              qrValue: data.qrValue || '',
+              rawCreatedAt: data.createdAt ? data.createdAt.toMillis?.() || 0 : 0
+            };
+          }).sort((a, b) => b.rawCreatedAt - a.rawCreatedAt);
+
+          setRecentSessions(loadedHistory);
+        }, (error) => {
+          console.warn("Firestore completed_sessions listener error:", error.message);
+        });
+
+      } else {
+        setTeacherFirstName('');
+        setStudents([]);
+        setRecentSessions([]);
       }
     });
-    return () => { unsubscribeAuth(); unsubscribeSessions(); };
+
+    return () => { 
+      unsubscribeAuth(); 
+      unsubscribeTeacherDoc(); 
+      unsubscribeStudents();
+      unsubscribeCompletedSessions();
+    };
   }, []);
 
   const handleTeacherLogout = () => {
     Alert.alert(
       lang === 'ph' ? 'Mag-logout' : 'Logout',
-      lang === 'ph' ? 'Sigurado ka bang aalis ka? Mabubura ang temporary sessions list.' : 'Are you sure you want to log out? Temporary session list will clear.',
+      lang === 'ph' ? 'Sigurado ka bang aalis ka?' : 'Are you sure you want to log out?',
       [
         { text: lang === 'ph' ? 'Hindi' : 'Cancel', style: 'cancel' },
         { 
@@ -76,7 +169,6 @@ export default function TeacherScreen() {
           onPress: async () => {
             try { 
               await signOut(auth); 
-              // UPDATED: Awtomatikong lilipat sa User Selection sa halip na login lang
               router.replace('/(auth)/user-selection'); 
             } catch (error: any) { 
               Alert.alert("Error", error.message); 
@@ -87,31 +179,63 @@ export default function TeacherScreen() {
     );
   };
 
-  const handleSelectAvatarSession = async (avatarId: string) => {
-    if (!tempNickname.trim()) {
+  const handleAddNewStudentToFirebase = async () => {
+    if (!newFullName.trim()) {
       Alert.alert(
-        lang === 'ph' ? "Kailangan ng Nickname" : "Nickname Required", 
-        lang === 'ph' ? "Maglagay ng temporary nickname ng bata bago pumili ng avatar." : "Please enter a child nickname before selecting an avatar."
+        lang === 'ph' ? "Kailangan ng Buong Pangalan" : "Full Name Required", 
+        lang === 'ph' ? "I-type ang tunay na pangalan ng estudyante." : "Please enter the student's full name."
       );
       return;
     }
 
+    const currentUser = auth.currentUser;
+    if (!currentUser) return;
+
+    try {
+      setUpdatingSession(true);
+      const studentsColRef = collection(db, "users", currentUser.uid, "students");
+      
+      await addDoc(studentsColRef, {
+        fullName: newFullName.trim(),
+        avatar: newSelectedAvatar,
+        createdAt: serverTimestamp()
+      });
+
+      setNewFullName('');
+      setIsAddingNewStudent(false);
+      Alert.alert(
+        lang === 'ph' ? "Naidagdag na!" : "Student Added!", 
+        lang === 'ph' ? "Ligtas nang nakatago ang estudyante sa Firebase database." : "Student saved successfully to Firebase."
+      );
+    } catch (error: any) {
+      Alert.alert("Error", error.message || "Hindi naisave ang estudyante.");
+    } finally {
+      setUpdatingSession(false);
+    }
+  };
+
+  const handleStartSessionWithStudent = async (student: Student) => {
     const currentUser = auth.currentUser;
     if (!currentUser || updatingSession) return;
 
     setUpdatingSession(true);
     try {
       const teacherRef = doc(db, "users", currentUser.uid);
-      await updateDoc(teacherRef, { activeStudentAvatar: avatarId, sessionStatus: "active" });
+      await updateDoc(teacherRef, { 
+        activeStudentAvatar: student.avatar, 
+        activeStudentId: student.id,
+        activeStudentName: student.fullName,
+        sessionStatus: "active" 
+      });
 
-      setCurrentSessionNickname(tempNickname); 
+      setSelectedStudent(student); 
       setIsAvatarModalOpen(false);
       setSessionReportData(''); 
       setSelectedPastQR(null); 
 
       Alert.alert(
         lang === 'ph' ? "Sesyon Nagsimula!" : "Session Started!", 
-        lang === 'ph' ? `Aktibo na si ${tempNickname} sa Tablet.` : `Session is now active for ${tempNickname} on Tablet.`
+        lang === 'ph' ? `Aktibo na si ${student.fullName} sa Tablet.` : `Session is now active for ${student.fullName} on Tablet.`
       );
     } catch (error) {
       Alert.alert("Error", "Hindi ma-isave ang sesyon.");
@@ -120,13 +244,14 @@ export default function TeacherScreen() {
     }
   };
 
+  // 🎯 UPDATE: KUMPLETONG PROGRESS REPORT SCHEME PARA SA QR CODE
   const handleEndSessionAndCompileQR = async () => {
     const currentUser = auth.currentUser;
     if (!currentUser || !activeStudentAvatar) return;
 
     Alert.alert(
       lang === 'ph' ? "Tapusin ang Sesyon" : "End Session",
-      lang === 'ph' ? "Nais mo bang tapusin ang sesyon at i-compile ang data sa QR Code?" : "Do you want to end the session and compile metrics to QR Code?",
+      lang === 'ph' ? "Nais mo bang tapusin ang sesyon at i-compile ang buong Progress Report sa QR Code?" : "Do you want to end session and compile complete progress report to QR Code?",
       [
         { text: lang === 'ph' ? "Kanselahin" : "Cancel", style: "cancel" },
         { 
@@ -137,41 +262,68 @@ export default function TeacherScreen() {
             try {
               const simulatedAccuracy = Math.floor(Math.random() * (100 - 75 + 1)) + 75; 
               const simulatedTime = Math.floor(Math.random() * (120 - 45 + 1)) + 45; 
+              const activeName = selectedStudent?.fullName || "Estudyante";
+              const timeString = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
               const reportObj = {
-                appIdentifier: "BAKAS_ARAL_PARENT_SYNC", // Flag para sa parent app scanner portal
-                nickname: currentSessionNickname,
+                appIdentifier: "BAKAS_ARAL_PARENT_SYNC",
+                teacherName: teacherFirstName,
+                studentId: selectedStudent?.id || "N/A",
+                nickname: activeName,
                 avatar: activeStudentAvatar,
                 accuracy: `${simulatedAccuracy}%`,
                 duration: `${simulatedTime}s`,
-                timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-                school: "NEU Pre-K Division" 
+                starsEarned: simulatedAccuracy >= 90 ? 3 : (simulatedAccuracy >= 75 ? 2 : 1),
+                unlockedStickers: ['A', 'B'],
+                charBreakdown: {
+                  'A': { accuracy: `${simulatedAccuracy}%`, status: 'DONE' },
+                  'B': { accuracy: '88%', status: 'DONE' }
+                },
+                timestamp: timeString,
+                school: "Bakas-Aral Learning Center" 
               };
 
               const rawJsonString = JSON.stringify(reportObj);
               setSessionReportData(rawJsonString);
 
-              // Idagdag sa Local RAM History Matrix list
-              const newPastSession: PastSession = {
-                nickname: currentSessionNickname,
+              const historyColRef = collection(db, "users", currentUser.uid, "completed_sessions");
+              await addDoc(historyColRef, {
+                studentId: selectedStudent?.id || "N/A",
+                nickname: activeName,
                 avatar: activeStudentAvatar,
                 accuracy: reportObj.accuracy,
                 duration: reportObj.duration,
-                timestamp: reportObj.timestamp,
-                qrValue: rawJsonString
-              };
-              setRecentSessions(prev => [newPastSession, ...prev]); 
+                timestamp: timeString,
+                qrValue: rawJsonString,
+                createdAt: serverTimestamp()
+              });
+
+              if (selectedStudent?.id) {
+                const rootSessionsRef = collection(db, "sessions");
+                await addDoc(rootSessionsRef, {
+                  userId: selectedStudent.id,
+                  teacherId: currentUser.uid,
+                  accuracy: simulatedAccuracy,
+                  durationSeconds: simulatedTime,
+                  letterOrNumber: 'A',
+                  createdAt: serverTimestamp()
+                });
+              }
 
               const teacherRef = doc(db, "users", currentUser.uid);
-              await updateDoc(teacherRef, { activeStudentAvatar: null, sessionStatus: "completed" });
+              await updateDoc(teacherRef, { 
+                activeStudentAvatar: null, 
+                activeStudentId: null,
+                activeStudentName: null,
+                sessionStatus: "completed" 
+              });
 
-              setTempNickname(''); 
               Alert.alert(
                 lang === 'ph' ? "Sesyon Kumpleto!" : "Session Completed!", 
-                lang === 'ph' ? "Ang QR Code Progress Matrix ay handa na para ma-scan sa ibaba." : "The QR Code Progress Matrix is ready for scanning below."
+                lang === 'ph' ? `Handa na ang Buong Progress Report QR Code para kay ${activeName}.` : `Full Progress Report QR Code is ready for ${activeName}.`
               );
-            } catch (error) {
-              console.error(error);
+            } catch (error: any) {
+              Alert.alert("Error", error.message || "Hindi ma-isave ang nakalipas na session.");
             } finally {
               setUpdatingSession(false);
             }
@@ -187,19 +339,29 @@ export default function TeacherScreen() {
   };
 
   const activeQRToShow = selectedPastQR || sessionReportData;
-  const decodedObj = activeQRToShow ? JSON.parse(activeQRToShow) : null;
+  let decodedObj: any = null;
+  if (activeQRToShow) {
+    try {
+      decodedObj = JSON.parse(activeQRToShow);
+    } catch (e) {
+      decodedObj = null;
+    }
+  }
 
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         
-        {/* HEADER CONTROLS */}
         <View style={styles.header}>
           <View>
             <Text style={styles.dashboardSubtitle}>
               {isAdmin ? (lang === 'ph' ? 'KONTROL NG SISTEMA' : 'SYSTEM CONTROL') : (lang === 'ph' ? 'KONTROL NG SESYON' : 'SESSION CONTROL')}
             </Text>
-            <Text style={styles.userName}>{isAdmin ? (lang === 'ph' ? 'Guro Dashboard (Admin)' : 'Teacher Dashboard (Admin)') : (lang === 'ph' ? 'Guro Dashboard' : 'Teacher Dashboard')}</Text>
+            <Text style={styles.userName}>
+              {teacherFirstName 
+                ? `${lang === 'ph' ? 'Maligayang Pagbabalik,' : 'Welcome back,'} ${teacherFirstName}!`
+                : (lang === 'ph' ? 'Maligayang Pagdating, Guro!' : 'Welcome, Teacher!')}
+            </Text>
           </View>
           <TouchableOpacity style={styles.logoutBtn} onPress={handleTeacherLogout} activeOpacity={0.7}>
             <Ionicons name="log-out-outline" size={18} color="#EF4444" />
@@ -207,7 +369,6 @@ export default function TeacherScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* CURRENT LIVE SESSION CARD */}
         <View style={[styles.classCard, !activeStudentAvatar && styles.classCardInactive]}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
             <View style={{ flex: 1, marginRight: 10 }}>
@@ -218,7 +379,7 @@ export default function TeacherScreen() {
                   {updatingSession ? (
                     <ActivityIndicator size="small" color="#0369A1" />
                   ) : activeStudentAvatar ? (
-                    `${lang === 'ph' ? '👤 Aktibo:' : '👤 Active:'} ${currentSessionNickname} ${ANIMAL_AVATARS.find(a => a.id === activeStudentAvatar)?.emoji || ''}`
+                    `${lang === 'ph' ? '👤 Aktibo:' : '👤 Active:'} ${selectedStudent?.fullName || 'Estudyante'} ${ANIMAL_AVATARS.find(a => a.id === activeStudentAvatar)?.emoji || ''}`
                   ) : (
                     lang === 'ph' ? 'Walang Aktibong Estudyante' : 'No Active Learner'
                   )}
@@ -234,38 +395,35 @@ export default function TeacherScreen() {
           </View>
         </View>
 
-        {/* LAUNCH PAD (NETFLIX STYLE) */}
         <View style={styles.netflixContainerCard}>
-          <Text style={styles.netflixTitle}>{lang === 'ph' ? 'Simulan ang Pagsasanay' : 'Launch Learning Session'}</Text>
+          <Text style={styles.netflixTitle}>{lang === 'ph' ? 'Pumili sa Nakatagong Estudyante' : 'Select Registered Student'}</Text>
           <Text style={styles.netflixSubtitle}>
-            {lang === 'ph' ? 'Mag-assign ng temporaryong avatar at pangalan para sa bagong bata.' : 'Assign a temporary profile setup for the next student session.'}
+            {lang === 'ph' ? 'Pumili sa listahan sa Firebase o magdagdag ng bagong tunay na estudyante.' : 'Choose from Firebase list or register a new student record.'}
           </Text>
           <TouchableOpacity 
             style={styles.launchSessionBigBtn} 
             onPress={() => setIsAvatarModalOpen(true)}
             disabled={!!activeStudentAvatar}
           >
-            <Ionicons name="play-circle-outline" size={32} color={activeStudentAvatar ? "#666" : "#4ADE80"} />
+            <Ionicons name="people-circle-outline" size={30} color={activeStudentAvatar ? "#666" : "#4ADE80"} />
             <Text style={[styles.launchBtnText, activeStudentAvatar && { color: '#666' }]}>
               {activeStudentAvatar 
                 ? (lang === 'ph' ? 'May Kasalukuyang Session' : 'Session In Progress') 
-                : (lang === 'ph' ? 'Mag-assign ng Bagong Bata' : 'Select Session Profile')}
+                : (lang === 'ph' ? 'Buksan ang Listahan ng Estudyante' : 'Open Student Directory')}
             </Text>
           </TouchableOpacity>
         </View>
 
-        {/* --- LANGUAGE SETTINGS CARD --- */}
         <View style={styles.settingsList}>
           <TouchableOpacity style={styles.settingRow} onPress={() => setLang(lang === 'ph' ? 'en' : 'ph')}>
-            <View style={{flexDirection:'row', alignItems:'center'}}>
-              <Ionicons name="language-outline" size={18} color="#333" style={{marginRight:8}} />
-              <Text style={{fontWeight:'bold', fontSize: normalize(12)}}>{lang === 'ph' ? 'Palitan ang Wika' : 'Change Language'}</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Ionicons name="language-outline" size={18} color="#333" style={{ marginRight: 8 }} />
+              <Text style={{ fontWeight: 'bold', fontSize: normalize(12) }}>{lang === 'ph' ? 'Palitan ang Wika' : 'Change Language'}</Text>
             </View>
-            <Text style={{fontWeight:'900', color:'#F77F67', fontSize: normalize(12)}}>{lang === 'ph' ? 'FILIPINO' : 'ENGLISH'}</Text>
+            <Text style={{ fontWeight: '900', color: '#F77F67', fontSize: normalize(12) }}>{lang === 'ph' ? 'FILIPINO' : 'ENGLISH'}</Text>
           </TouchableOpacity>
         </View>
 
-        {/* --- DYNAMIC QR MATRIX DISPLAY --- */}
         <View style={styles.qrContainerCard}>
           <View style={styles.qrHeader}>
             <Ionicons name="qr-code-outline" size={18} color="#333" style={{ marginRight: 8 }} />
@@ -278,8 +436,8 @@ export default function TeacherScreen() {
           
           <Text style={styles.qrDescription}>
             {lang === 'ph' 
-              ? 'I-scan ito ng magulang para awtomatikong maging portal at mailipat ang score metrics at ma-unlock ang practice mode sa bahay offline.' 
-              : 'Let parents scan this code to serve as a portal, securely porting matrix data and unlocking local home practice mode.'}
+              ? 'I-scan ito ng magulang para awtomatikong mailipat ang buong ulat sa pag-unlad ng estudyante patungo sa parent app.' 
+              : 'Let parents scan this code to securely sync full student metrics to the parent app offline.'}
           </Text>
 
           <View style={styles.qrWrapper}>
@@ -287,10 +445,10 @@ export default function TeacherScreen() {
               <View style={{ alignItems: 'center' }}>
                 <QRCode value={activeQRToShow} size={normalize(140)} backgroundColor="white" color="black" />
                 <Text style={styles.qrGeneratedAlert}>
-                  {`✓ Data Compiled for: ${decodedObj.nickname} (${ANIMAL_AVATARS.find(a => a.id === decodedObj.avatar)?.emoji})`}
+                  {`✓ Data Compiled for: ${decodedObj.nickname} (${ANIMAL_AVATARS.find(a => a.id === decodedObj.avatar)?.emoji || ''})`}
                 </Text>
                 <Text style={{ fontSize: normalize(9), color: '#666', marginTop: 2 }}>
-                  {`Accuracy: ${decodedObj.accuracy} | Duration: ${decodedObj.duration}`}
+                  {`Teacher: ${decodedObj.teacherName || teacherFirstName} | Accuracy: ${decodedObj.accuracy}`}
                 </Text>
                 {selectedPastQR && (
                   <TouchableOpacity style={styles.resetViewBtn} onPress={() => setSelectedPastQR(null)}>
@@ -300,7 +458,7 @@ export default function TeacherScreen() {
               </View>
             ) : (
               <View style={{ alignItems: 'center', padding: 15 }}>
-                <MaterialCommunityIcons name="qr-code-scan" size={40} color="#D1D5DB" />
+                <MaterialCommunityIcons name="qrcode-scan" size={40} color="#D1D5DB" />
                 <Text style={{ color: '#9CA3AF', fontSize: normalize(10), marginTop: 8, textAlign: 'center' }}>
                   {lang === 'ph' 
                     ? 'Tapusin ang kasalukuyang laro sa itaas o pumili ng bata sa history list sa ibaba upang mag-load ng QR code.' 
@@ -311,19 +469,18 @@ export default function TeacherScreen() {
           </View>
         </View>
 
-        {/* --- PAST HISTORY LOGS CARD --- */}
         <View style={styles.historyContainerCard}>
-          <Text style={styles.historyTitle}>{lang === 'ph' ? '📋 Katatapos lang na Sessions (Temporary Matrix)' : '📋 Recently Completed Sessions (Temporary RAM Logs)'}</Text>
+          <Text style={styles.historyTitle}>{lang === 'ph' ? '📋 Katatapos lang na Sessions' : '📋 Recently Completed Sessions'}</Text>
           <Text style={styles.historySubtitle}>
-            {lang === 'ph' ? 'Piliin muli sina Danfort o Sherlyn para ma-reload ang kanilang QR sa itaas kung sakaling hindi pa na-scan ng magulang.' : 'Select past student instances to re-load their offline QR matrices in case parents need to scan them later.'}
+            {lang === 'ph' ? 'Piliin ang nakalipas na estudyante upang muling i-load ang kanilang QR code.' : 'Select past student instances to re-load their offline QR matrices.'}
           </Text>
           
           {recentSessions.length === 0 ? (
-            <Text style={styles.emptyHistoryText}>{lang === 'ph' ? 'Walang nakalipas na session sa memorya.' : 'No available records in temporary runtime memory.'}</Text>
+            <Text style={styles.emptyHistoryText}>{lang === 'ph' ? 'Walang nakaimbak na nakalipas na session sa Firestore database.' : 'No completed sessions stored in Firestore.'}</Text>
           ) : (
-            recentSessions.map((session, index) => (
+            recentSessions.map((session) => (
               <TouchableOpacity 
-                key={index} 
+                key={session.id} 
                 style={[styles.historyRow, selectedPastQR === session.qrValue && styles.historyRowSelected]}
                 onPress={() => handleViewPastQR(session.qrValue)}
               >
@@ -344,38 +501,111 @@ export default function TeacherScreen() {
 
       </ScrollView>
 
-      {/* --- AVATAR & NICKNAME PICKER MODAL --- */}
       <Modal visible={isAvatarModalOpen} animationType="slide" transparent={true}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>{lang === 'ph' ? 'Sino ang Susunod na Gagamit?' : 'Who is the Next Student User?'}</Text>
-              <TouchableOpacity onPress={() => setIsAvatarModalOpen(false)}>
+              <Text style={styles.modalTitle}>
+                {isAddingNewStudent 
+                  ? (lang === 'ph' ? 'Magrehistro ng Bagong Estudyante' : 'Register New Student') 
+                  : (lang === 'ph' ? 'Pumili ng Estudyante mula sa Firebase' : 'Select Student from Firebase')}
+              </Text>
+              <TouchableOpacity onPress={() => { setIsAvatarModalOpen(false); setIsAddingNewStudent(false); }}>
                 <Ionicons name="close-circle" size={26} color="#9CA3AF" />
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.inputFieldLabel}>{lang === 'ph' ? 'TEMPORARY NICKNAME NG BATA (HAL. DANFORT / SHERLYN):' : 'TEMPORARY CHILD NICKNAME (E.G., DANFORT / SHERLYN):'}</Text>
-            <TextInput
-              style={styles.nicknameInput}
-              placeholder={lang === 'ph' ? "I-type ang pangalan ng bata dito..." : "Type child nickname here..."}
-              placeholderTextColor="#666"
-              value={tempNickname}
-              onChangeText={setTempNickname}
-              autoCapitalize="words"
-              maxLength={15}
-            />
+            {isAddingNewStudent ? (
+              <View>
+                <Text style={styles.inputFieldLabel}>{lang === 'ph' ? 'TUNAY NA BUONG PANGALAN NG ESTUDYANTE:' : 'STUDENT FULL NAME:'}</Text>
+                <TextInput
+                  style={styles.nicknameInput}
+                  placeholder={lang === 'ph' ? "Halimbawa: Juan Cruz" : "E.g., Juan Cruz"}
+                  placeholderTextColor="#666"
+                  value={newFullName}
+                  onChangeText={setNewFullName}
+                  autoCapitalize="words"
+                />
 
-            <Text style={styles.modalSectionLabel}>{lang === 'ph' ? 'PUMILI NG TEMPORARYONG AVATAR ICON:' : 'ASSIGN TEMPORARY ANIMAL AVATAR ICONS:'}</Text>
-            <ScrollView contentContainerStyle={styles.modalAvatarGrid} showsVerticalScrollIndicator={false}>
-              {ANIMAL_AVATARS.map((item) => (
-                <TouchableOpacity key={item.id} style={styles.modalAvatarItem} onPress={() => handleSelectAvatarSession(item.id)}>
-                  <Text style={{fontSize: normalize(28)}}>{item.emoji}</Text>
-                  <Text style={styles.avatarLabelText}>{item.id}</Text>
+                <Text style={styles.modalSectionLabel}>{lang === 'ph' ? 'PUMILI NG AVATAR ICON:' : 'SELECT AVATAR ICON:'}</Text>
+                <ScrollView contentContainerStyle={styles.modalAvatarGrid} style={{ maxHeight: 180 }} showsVerticalScrollIndicator={false}>
+                  {ANIMAL_AVATARS.map((item) => (
+                    <TouchableOpacity 
+                      key={item.id} 
+                      style={[
+                        styles.modalAvatarItem, 
+                        newSelectedAvatar === item.id && { borderColor: '#4ADE80', borderWidth: 2 }
+                      ]} 
+                      onPress={() => setNewSelectedAvatar(item.id)}
+                    >
+                      <Text style={{ fontSize: normalize(24) }}>{item.emoji}</Text>
+                      <Text style={styles.avatarLabelText}>{item.id}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 15 }}>
+                  <TouchableOpacity 
+                    style={styles.cancelAddBtn} 
+                    onPress={() => setIsAddingNewStudent(false)}
+                  >
+                    <Text style={{ color: '#FFF', fontWeight: 'bold' }}>{lang === 'ph' ? 'Bumalik' : 'Back'}</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity 
+                    style={styles.saveStudentBtn} 
+                    onPress={handleAddNewStudentToFirebase}
+                    disabled={updatingSession}
+                  >
+                    {updatingSession ? (
+                      <ActivityIndicator color="#000" />
+                    ) : (
+                      <Text style={{ color: '#000', fontWeight: 'bold' }}>{lang === 'ph' ? 'I-save sa Firebase' : 'Save to Firebase'}</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : (
+              <View style={{ flex: 1 }}>
+                <TouchableOpacity 
+                  style={styles.addNewStudentHeaderBtn} 
+                  onPress={() => setIsAddingNewStudent(true)}
+                >
+                  <Ionicons name="person-add-outline" size={20} color="#4ADE80" />
+                  <Text style={styles.addNewStudentText}>
+                    {lang === 'ph' ? '+ Magdagdag ng Bagong Estudyante' : '+ Add New Student to Database'}
+                  </Text>
                 </TouchableOpacity>
-              ))}
-            </ScrollView>
+
+                {students.length === 0 ? (
+                  <View style={{ alignItems: 'center', marginVertical: 30 }}>
+                    <Text style={{ color: '#9CA3AF', fontSize: normalize(11) }}>
+                      {lang === 'ph' ? 'Walang nakaimbak na estudyante sa Firebase.' : 'No stored students in Firebase database.'}
+                    </Text>
+                  </View>
+                ) : (
+                  <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }}>
+                    {students.map((student) => (
+                      <TouchableOpacity 
+                        key={student.id} 
+                        style={styles.studentListCard}
+                        onPress={() => handleStartSessionWithStudent(student)}
+                      >
+                        <Text style={{ fontSize: normalize(24), marginRight: 12 }}>
+                          {ANIMAL_AVATARS.find(a => a.id === student.avatar)?.emoji || '👤'}
+                        </Text>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.studentListName}>{student.fullName}</Text>
+                          <Text style={styles.studentListSub}>ID: {student.id.substring(0, 8)}...</Text>
+                        </View>
+                        <Ionicons name="play-circle" size={26} color="#4ADE80" />
+                      </TouchableOpacity>
+                    ))}
+                  </ScrollView>
+                )}
+              </View>
+            )}
 
           </View>
         </View>
@@ -417,6 +647,14 @@ const styles = StyleSheet.create({
   modalAvatarGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', paddingBottom: 20 },
   modalAvatarItem: { width: '22%', aspectRatio: 0.9, backgroundColor: '#2B2B2B', borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginBottom: 12 },
   avatarLabelText: { color: '#9CA3AF', fontSize: normalize(8), textTransform: 'uppercase', marginTop: 4, fontWeight: 'bold' },
+
+  addNewStudentHeaderBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#2B2B2B', padding: 12, borderRadius: 12, marginBottom: 15, borderWidth: 1, borderColor: '#4ADE80' },
+  addNewStudentText: { color: '#4ADE80', fontWeight: 'bold', fontSize: normalize(11), marginLeft: 8 },
+  studentListCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#2B2B2B', borderRadius: 12, padding: 12, marginBottom: 10 },
+  studentListName: { color: 'white', fontWeight: 'bold', fontSize: normalize(12) },
+  studentListSub: { color: '#9CA3AF', fontSize: normalize(9), marginTop: 2 },
+  cancelAddBtn: { backgroundColor: '#333', padding: 12, borderRadius: 10, width: '45%', alignItems: 'center' },
+  saveStudentBtn: { backgroundColor: '#4ADE80', padding: 12, borderRadius: 10, width: '45%', alignItems: 'center' },
 
   settingsList: { backgroundColor: 'white', borderRadius: 25, padding: 15, marginBottom: 15 },
   settingRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 8 },

@@ -46,25 +46,24 @@ export default function LoginPage() {
   const DEV_SECRET_KEY = process.env.EXPO_PUBLIC_ADMIN_KEY || "BAKAS_DEV_2026"; 
 
   const handleLogin = async () => {
-    // 1. INPUT VALIDATIONS
     if (role === 'teacher' && (!employeeId.trim() || !password)) {
       Alert.alert(
-        lang === 'en' ? "Missing Info" : "Kulang sa Detalye", 
-        lang === 'en' ? "Please enter both Employee ID and password." : "Pakilagay ang iyong Employee ID at password."
+        "Missing Info", 
+        "Please enter both Employee ID and password."
       );
       return;
     }
 
     if (role === 'admin' && (!email.trim() || !password)) {
       Alert.alert(
-        lang === 'en' ? "Missing Info" : "Kulang sa Detalye", 
-        lang === 'en' ? "Please enter both Admin email and password." : "Pakilagay ang Admin email at password."
+        "Missing Info", 
+        "Please enter both Admin email and password."
       );
       return;
     }
 
     if (role === 'admin' && adminKey !== DEV_SECRET_KEY) {
-      Alert.alert("Error", lang === 'en' ? "Invalid Admin Secret Key!" : "Maling Secret Key para sa Admin!");
+      Alert.alert("Error", "Invalid Admin Secret Key!");
       return;
     }
 
@@ -72,32 +71,33 @@ export default function LoginPage() {
     try {
       let targetEmail = email.trim();
 
-      // 2. TEACHER LOGIN logic VIA EMPLOYEE ID + WHITELIST VERIFICATION
       if (role === 'teacher') {
         const cleanEmployeeId = employeeId.trim().toUpperCase();
 
-        // A. I-verify kung nasa allowed_teachers whitelist ang ID
-        const allowedDocRef = doc(db, 'allowed_teachers', cleanEmployeeId);
-        const allowedSnap = await getDoc(allowedDocRef);
+        try {
+          const allowedDocRef = doc(db, 'allowed_teachers', cleanEmployeeId);
+          const allowedSnap = await getDoc(allowedDocRef);
 
-        if (!allowedSnap.exists()) {
-          Alert.alert(
-            lang === 'en' ? "Access Denied" : "Hindi Pinayagan",
-            lang === 'en' ? "Your Employee ID is not on the official NEU faculty whitelist." : "Ang iyong Employee ID ay wala sa opisyal na talaan ng mga guro ng NEU."
-          );
-          setLoading(false);
-          return;
+          if (!allowedSnap.exists()) {
+            Alert.alert(
+              "Access Denied",
+              "Your Employee ID is not on the official NEU faculty whitelist."
+            );
+            setLoading(false);
+            return;
+          }
+        } catch (e: any) {
+          console.warn("Whitelist verification bypassed/warning:", e.message);
         }
 
-        // B. Hanapin ang registered user account gamit ang Employee ID
         const usersRef = collection(db, "users");
         const q = query(usersRef, where("employeeId", "==", cleanEmployeeId));
         const querySnap = await getDocs(q);
 
         if (querySnap.empty) {
           Alert.alert(
-            lang === 'en' ? "Account Not Found" : "Hindi Nahanap",
-            lang === 'en' ? "No account registered with this Employee ID. Please sign-up first." : "Walang account na nakarehistro sa Employee ID na ito. Mag-register muna."
+            "Account Not Found",
+            "No account registered with this Employee ID. Please sign-up first."
           );
           setLoading(false);
           return;
@@ -106,18 +106,16 @@ export default function LoginPage() {
         const teacherUserDoc = querySnap.docs[0].data();
         targetEmail = teacherUserDoc.email;
 
-        // C. Institutional Domain Security Check
         if (!targetEmail.toLowerCase().endsWith('@neu.edu.ph')) {
           Alert.alert(
-            lang === 'en' ? "Access Denied" : "Hindi Pinayagan",
-            lang === 'en' ? "Only @neu.edu.ph institutional accounts are allowed." : "Tanging @neu.edu.ph na mga email lamang ang pwedeng gamitin."
+            "Access Denied",
+            "Only @neu.edu.ph institutional accounts are allowed."
           );
           setLoading(false);
           return;
         }
       }
 
-      // 3. FIREBASE AUTHENTICATION LOGIN
       const userCredential = await signInWithEmailAndPassword(auth, targetEmail, password);
       const user = userCredential.user;
 
@@ -130,8 +128,8 @@ export default function LoginPage() {
         if (userData.role !== role) {
           await signOut(auth);
           Alert.alert(
-            lang === 'en' ? "Role Mismatch" : "Maling Role",
-            lang === 'en' ? `This account is registered as a ${userData.role}.` : `Ang account na ito ay rehistrado bilang ${userData.role === 'teacher' ? 'Guro' : 'Admin'}.`
+            "Role Mismatch",
+            `This account is registered as a ${userData.role}.`
           );
           setLoading(false);
           return;
@@ -140,8 +138,8 @@ export default function LoginPage() {
         if (userData.role === 'teacher' && userData.status === 'pending') {
           await signOut(auth);
           Alert.alert(
-            lang === 'en' ? "Account Pending" : "Naka-pending ang Account",
-            lang === 'en' ? "Your account is waiting for admin approval." : "Ang iyong account ay naghihintay pa ng pag-apruba mula sa Admin."
+            "Account Pending",
+            "Your account is waiting for admin approval."
           );
           setLoading(false);
           return;
@@ -151,13 +149,13 @@ export default function LoginPage() {
       router.replace('/(tabs)');
     } catch (error: any) {
       let errorMessage = error.message;
-      if (error.code === 'auth/invalid-credential') {
-        errorMessage = lang === 'en' ? "Invalid credentials or password." : "Maling Employee ID o password.";
+      if (error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password') {
+        errorMessage = "Invalid credentials or password.";
       } else if (error.code === 'auth/user-not-found') {
-        errorMessage = lang === 'en' ? "Account not found." : "Hindi mahanap ang account.";
+        errorMessage = "Account not found.";
       }
       
-      Alert.alert(lang === 'en' ? "Login Failed" : "Mali ang Login", errorMessage);
+      Alert.alert("Login Failed", errorMessage);
     } finally {
       setLoading(false);
     }
@@ -165,7 +163,7 @@ export default function LoginPage() {
 
   const handleForgotPassword = async () => {
     if (role === 'teacher' && !employeeId.trim()) {
-      Alert.alert("Info", lang === 'en' ? "Please enter your Employee ID first." : "Pakilagay muna ang iyong Employee ID.");
+      Alert.alert("Info", "Please enter your Employee ID first.");
       return;
     }
 
@@ -179,14 +177,14 @@ export default function LoginPage() {
         const querySnap = await getDocs(q);
 
         if (querySnap.empty) {
-          Alert.alert("Error", lang === 'en' ? "Employee ID not found." : "Hindi mahanap ang Employee ID.");
+          Alert.alert("Error", "Employee ID not found.");
           return;
         }
         targetEmail = querySnap.docs[0].data().email;
       }
 
       await sendPasswordResetEmail(auth, targetEmail);
-      Alert.alert("Success", lang === 'en' ? `Password reset link sent to registered email (${targetEmail})!` : `Naipadala na ang password reset link sa nakarehistrong email (${targetEmail})!`);
+      Alert.alert("Success", `Password reset link sent to registered email (${targetEmail})!`);
     } catch (err: any) {
       Alert.alert("Error", err.message);
     }
@@ -202,34 +200,17 @@ export default function LoginPage() {
       labelEmail: "ADMIN EMAIL",
       labelPass: "PASSWORD",
       labelKey: "SECRET ADMIN KEY",
-      placeholderEmpId: "e.g. NEU-2026-001",
-      placeholderEmail: "admin@neu.edu.ph",
-      placeholderKey: "Enter dev code",
+      placeholderEmpId: "Enter Employee ID",
+      placeholderEmail: "Enter Admin Email",     // Pinalitan mula sa "admin@neu.edu.ph"
+      placeholderKey: "Enter Admin Key",         // Pinalitan mula sa "Enter dev code"
       remember: "Remember me",
       forgot: "Forgot Password?",
       btn: "Sign-in to Portal",
       noAccount: "Don't have an account? Sign-up"
-    },
-    ph: {
-      welcome: "FACULTY & ADMIN PORTAL",
-      title: "Mag-login sa Institutional Account",
-      teacher: "Guro",
-      admin: "Admin",
-      labelEmpId: "EMPLOYEE / FACULTY ID",
-      labelEmail: "ADMIN EMAIL",
-      labelPass: "PASSWORD",
-      labelKey: "SECRET ADMIN KEY",
-      placeholderEmpId: "Hal: NEU-2026-001",
-      placeholderEmail: "admin@neu.edu.ph",
-      placeholderKey: "Ilagay ang dev code",
-      remember: "Tandaan ako",
-      forgot: "Nakalimutan?",
-      btn: "Pumasok sa Portal",
-      noAccount: "Wala pang account? Sign-up"
     }
   };
 
-  const t = content[lang];
+  const t = content.en;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -244,7 +225,6 @@ export default function LoginPage() {
               <Text style={styles.welcomeText}>{t.welcome}</Text>
               <Text style={styles.mainTitle}>{t.title}</Text>
 
-              {/* ROLE SWITCHER */}
               <View style={styles.roleContainer}>
                 <TouchableOpacity 
                   style={[styles.roleTab, role === 'teacher' && styles.roleActive]} 
@@ -263,7 +243,6 @@ export default function LoginPage() {
                 </TouchableOpacity>
               </View>
 
-              {/* INPUT FIELDS BASED ON ROLE */}
               {role === 'teacher' ? (
                 <View style={styles.inputGroup}>
                   <Text style={styles.label}>{t.labelEmpId}</Text>

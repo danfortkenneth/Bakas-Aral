@@ -1,20 +1,38 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, ScrollView, TouchableOpacity, SafeAreaView, Dimensions, PixelRatio, Alert } from 'react-native';
+import { 
+  StyleSheet, 
+  Text, 
+  View, 
+  ScrollView, 
+  TouchableOpacity, 
+  Dimensions, 
+  PixelRatio, 
+  Alert,
+  ActivityIndicator
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
+import * as FileSystem from 'expo-file-system';
+import jsQR from 'jsqr';
+import { decode as decodeBase64 } from 'base64-js';
+import { decode as decodeJpeg } from 'jpeg-js';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const scale = SCREEN_WIDTH / 375;
 const normalize = (size: number) => Math.round(PixelRatio.roundToNearestPixel(size * scale));
 
-interface ChildProgress {
+interface ChildProgressReport {
   nickname: string;
   avatar: string;
   accuracy: string;
   duration: string;
+  starsEarned: number;
+  unlockedStickers: string[];
+  charBreakdown?: Record<string, { accuracy: string; status: string }>;
   timestamp: string;
   school: string;
 }
@@ -22,216 +40,375 @@ interface ChildProgress {
 export default function ParentsDashboardScreen() {
   const router = useRouter();
   const [permission, requestPermission] = useCameraPermissions();
+  const [loading, setLoading] = useState(true);
   const [isScanning, setIsScanning] = useState(false);
-  const [savedProgress, setSavedProgress] = useState<ChildProgress | null>(null);
-  const [pastSessions, setPastSessions] = useState<ChildProgress[]>([]);
+  const [savedProgress, setSavedProgress] = useState<ChildProgressReport | null>(null);
 
   useEffect(() => {
     loadLocalParentData();
   }, []);
 
-  // Mag-load ng data mula sa local phone memory ng magulang
   const loadLocalParentData = async () => {
     try {
       const activeProfile = await AsyncStorage.getItem('@parent_active_child');
-      const historyLog = await AsyncStorage.getItem('@parent_sync_history');
-      
-      if (activeProfile) setSavedProgress(JSON.parse(activeProfile));
-      if (historyLog) setPastSessions(JSON.parse(historyLog));
+      if (activeProfile) {
+        setSavedProgress(JSON.parse(activeProfile));
+      } else {
+        setIsScanning(true);
+      }
     } catch (e) {
       console.error("Failed to load local storage data.");
+    } finally {
+      setLoading(false);
     }
   };
 
-  // Proseso para sa Pag-parse at Pag-save ng QR Data
   const processQRData = async (rawData: string) => {
     try {
       const parsedData = JSON.parse(rawData);
 
-      // Proteksyon: Siguraduhing QR ng Bakás-Aral ang na-scan
       if (parsedData.appIdentifier !== "BAKAS_ARAL_PARENT_SYNC") {
-        Alert.alert("Maling QR Code", "Ang QR code na ito ay hindi galing sa Bakás-Aral Teacher Dashboard.");
+        Alert.alert("Invalid QR Code", "This QR code is not generated from the Bakas-Aral Teacher Dashboard.");
         return;
       }
 
-      const newRecord: ChildProgress = {
-        nickname: parsedData.nickname,
-        avatar: parsedData.avatar,
-        accuracy: parsedData.accuracy,
-        duration: parsedData.duration,
-        timestamp: parsedData.timestamp,
-        school: parsedData.school
+      const fullReport: ChildProgressReport = {
+        nickname: parsedData.nickname || "Student",
+        avatar: (parsedData.avatar || "tiger").toLowerCase(),
+        accuracy: parsedData.accuracy || "100%",
+        duration: parsedData.duration || "0s",
+        starsEarned: parsedData.starsEarned || 3,
+        unlockedStickers: parsedData.unlockedStickers || ['A'],
+        charBreakdown: parsedData.charBreakdown || { 'A': { accuracy: parsedData.accuracy || '100%', status: 'DONE' } },
+        timestamp: parsedData.timestamp || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        school: parsedData.school || "Bakas-Aral Learning Center"
       };
 
-      // I-save sa Local Phone Memory ng Magulang (Decentralized!)
-      await AsyncStorage.setItem('@parent_active_child', JSON.stringify(newRecord));
-      
-      const updatedHistory = [newRecord, ...pastSessions];
-      await AsyncStorage.setItem('@parent_sync_history', JSON.stringify(updatedHistory));
+      await AsyncStorage.removeItem('@parent_active_child');
+      await AsyncStorage.setItem('@parent_active_child', JSON.stringify(fullReport));
 
-      setSavedProgress(newRecord);
-      setPastSessions(updatedHistory);
+      setSavedProgress(fullReport);
+      setIsScanning(false);
 
-      Alert.alert("Sync Tagumpay!", `Na-import na ang pinakabagong classroom progress ni ${newRecord.nickname}!`);
+      Alert.alert("Synchronization Successful 🎉", `Loaded the progress report for ${fullReport.nickname}.`);
     } catch (error) {
-      Alert.alert("Error", "Hindi mabasa ang tamang data sa QR Code.");
+      Alert.alert("QR Code Error", "Unable to decode the QR code data. Please ensure it originates from the Teacher Application.");
     }
   };
 
-  // 1. Handler para sa Live Camera Scanner
   const handleBarcodeScanned = ({ data }: { data: string }) => {
-    setIsScanning(false);
     processQRData(data);
   };
 
-  // 2. Handler para sa Pag-upload ng QR mula sa Gallery (Litrato)
   const handleUploadQRImage = async () => {
-    // Humingi ng permiso sa photo library
-    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (status !== 'granted') {
-      Alert.alert("Permiso Kailangan", "Kailangan ng access sa iyong gallery upang makapili ng litrato ng QR.");
-      return;
-    }
+    try {
+      const currentPermission = await ImagePicker.getMediaLibraryPermissionsAsync();
+      let isGranted = currentPermission.granted;
 
-    // Buksan ang image picker
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      allowsEditing: true,
-      quality: 1,
-    });
-
-    if (!result.canceled && result.assets && result.assets[0]) {
-      const selectedImageUri = result.assets[0].uri;
-
-      // Gagamit tayo ng scanner feature na kaya mag-scan mula sa local image uri
-      try {
-        const scannedResults = await CameraView.scanFromImageAsync(selectedImageUri, ["qr"]);
-        if (scannedResults && scannedResults.length > 0) {
-          processQRData(scannedResults[0].data);
-        } else {
-          Alert.alert("Walang QR Code", "Hindi nakakita ng QR Code sa napiling litrato. Siguraduhing malinaw ang pagkakakuha.");
-        }
-      } catch (err) {
-        Alert.alert("Error", "May problema sa pag-scan ng litrato.");
+      if (!isGranted && currentPermission.canAskAgain) {
+        const requested = await ImagePicker.requestMediaLibraryPermissionsAsync();
+        isGranted = requested.granted;
       }
+
+      if (!isGranted) {
+        Alert.alert(
+          "Photo Permission Required",
+          "Access to Photo Library is blocked. Please allow access in Device Settings > Photos."
+        );
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        allowsEditing: false,
+        quality: 1,
+      });
+
+      if (!result.canceled && result.assets && result.assets[0]) {
+        const selectedImageUri = result.assets[0].uri;
+
+        try {
+          const scanFn = (CameraView as any).scanFromImageAsync;
+          if (typeof scanFn === 'function') {
+            const scannedResults = await scanFn(selectedImageUri, ["qr"]);
+            if (scannedResults && scannedResults.length > 0) {
+              processQRData(scannedResults[0].data);
+              return;
+            }
+          }
+        } catch (e) {
+          // Fall back to JS decoder if native scanning fails
+        }
+
+        try {
+          const base64 = await FileSystem.readAsStringAsync(selectedImageUri, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
+
+          const byteArray = decodeBase64(base64);
+          const rawImageData = decodeJpeg(byteArray, { useTArray: true });
+
+          const code = jsQR(
+            Uint8ClampedArray.from(rawImageData.data),
+            rawImageData.width,
+            rawImageData.height
+          );
+
+          if (code && code.data) {
+            processQRData(code.data);
+          } else {
+            Alert.alert(
+              "No QR Code Found", 
+              "Could not detect a valid QR Code in the selected image. Please ensure the image is clear and well-lit."
+            );
+          }
+        } catch (decodeErr) {
+          console.error("Error decoding JS QR:", decodeErr);
+          Alert.alert(
+            "Unreadable QR Code", 
+            "Unable to process the image format. Please select a JPEG/JPG image."
+          );
+        }
+      }
+    } catch (e) {
+      console.log("Gallery picker error or cancelled:", e);
     }
   };
 
-  if (!permission) return <View style={styles.center}><Text>Humihingi ng permiso sa Camera...</Text></View>;
-  
-  if (!permission.granted) {
+  const handleLogoutToUserSelection = () => {
+    Alert.alert(
+      "Exit Portal",
+      "Are you sure you want to log out and return to the User Selection screen?",
+      [
+        { text: "Cancel", style: "cancel" },
+        { 
+          text: "Log Out", 
+          style: "destructive", 
+          onPress: async () => {
+            await AsyncStorage.removeItem('@parent_active_child');
+            setSavedProgress(null);
+            router.replace('/(auth)/user-selection' as any);
+          } 
+        }
+      ]
+    );
+  };
+
+  const getAvatarEmoji = (avatar: string) => {
+    const cleanAvatar = (avatar || '').toLowerCase();
+    switch (cleanAvatar) {
+      case 'tiger': return '🐯';
+      case 'lion': return '🦁';
+      case 'bear': return '🐻';
+      case 'rabbit': return '🐰';
+      case 'panda': return '🐼';
+      case 'fox': return '🦊';
+      case 'koala': return '🐨';
+      case 'monkey': return '🐵';
+      case 'cat': return '🐱';
+      case 'dog': return '🐶';
+      case 'pig': return '🐷';
+      case 'mouse': return '🐭';
+      default: return '👶';
+    }
+  };
+
+  if (loading) {
     return (
       <View style={styles.center}>
-        <Text style={{ textAlign: 'center', marginBottom: 15 }}>Kailangan ng app ang access sa camera para ma-scan ang QR ng Guro.</Text>
-        <TouchableOpacity style={styles.permissionBtn} onPress={requestPermission}>
-          <Text style={{ color: 'white', fontWeight: 'bold' }}>Bigyan ng Permiso</Text>
-        </TouchableOpacity>
+        <ActivityIndicator size="large" color="#F77F67" />
+        <Text style={{ marginTop: 10, color: '#666' }}>Loading Parent Portal...</Text>
       </View>
+    );
+  }
+
+  if (isScanning || !savedProgress) {
+    if (!permission) return <View style={styles.center}><Text>Requesting Camera permission...</Text></View>;
+
+    if (!permission.granted) {
+      return (
+        <View style={styles.center}>
+          <Ionicons name="qr-code-outline" size={60} color="#F77F67" style={{ marginBottom: 15 }} />
+          <Text style={{ textAlign: 'center', marginBottom: 20, color: '#444', paddingHorizontal: 20 }}>
+            Camera permission is required to scan the student QR Code provided by the teacher to access the Parent Dashboard.
+          </Text>
+          <TouchableOpacity style={styles.permissionBtn} onPress={requestPermission}>
+            <Text style={{ color: 'white', fontWeight: 'bold' }}>Grant Camera Access</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={[styles.permissionBtn, { backgroundColor: '#FFF5F3', borderWidth: 1, borderColor: '#F77F67', marginTop: 10 }]} 
+            onPress={handleUploadQRImage}
+          >
+            <Text style={{ color: '#F77F67', fontWeight: 'bold' }}>Upload from Gallery</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={StyleSheet.absoluteFill}>
+          <CameraView
+            style={StyleSheet.absoluteFill}
+            facing="back"
+            onBarcodeScanned={handleBarcodeScanned}
+            barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
+          />
+          <View style={styles.overlayScanner}>
+            <View style={styles.scanNoticeCard}>
+              <Text style={styles.scanNoticeTitle}>🔑 Parent Portal Access Gate</Text>
+              <Text style={styles.scanNoticeSub}>
+                Scan the QR Code on the Teacher's device or upload a QR image from the gallery to sync the full progress report.
+              </Text>
+              <TouchableOpacity style={styles.overlayUploadBtn} onPress={handleUploadQRImage}>
+                <Ionicons name="image-outline" size={18} color="white" />
+                <Text style={styles.overlayUploadText}>Upload QR Image</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              {savedProgress && (
+                <TouchableOpacity style={styles.cancelScanBtn} onPress={() => setIsScanning(false)}>
+                  <Text style={{ color: 'white', fontWeight: 'bold' }}>Dashboard</Text>
+                </TouchableOpacity>
+              )}
+
+              <TouchableOpacity style={styles.logoutScanBtn} onPress={handleLogoutToUserSelection}>
+                <Ionicons name="log-out-outline" size={18} color="white" />
+                <Text style={{ color: 'white', fontWeight: 'bold', marginLeft: 4 }}>Log Out</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </SafeAreaView>
     );
   }
 
   return (
     <SafeAreaView style={styles.container}>
-      {isScanning ? (
-        <View style={StyleSheet.absoluteFillObject}>
-          <CameraView
-            style={StyleSheet.absoluteFillObject}
-            onBarcodeScanned={handleBarcodeScanned}
-            barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
-          />
-          <View style={styles.overlayScanner}>
-            <Text style={styles.scannerGuideText}>Itapat ang camera sa QR Code sa Tablet ng Guro</Text>
-            <TouchableOpacity style={styles.cancelScanBtn} onPress={() => setIsScanning(false)}>
-              <Text style={{ color: 'white', fontWeight: 'bold' }}>Kanselahin</Text>
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        
+        {/* HEADER WITH LOGOUT */}
+        <View style={styles.header}>
+          <View>
+            <Text style={styles.subtitle}>PARENTS ECOSYSTEM</Text>
+            <Text style={styles.title}>Progress Report</Text>
+          </View>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <TouchableOpacity style={styles.rescanHeaderBtn} onPress={() => setIsScanning(true)}>
+              <Ionicons name="qr-code-outline" size={16} color="#F77F67" />
+              <Text style={styles.rescanHeaderText}>Resync</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.logoutHeaderBtn} onPress={handleLogoutToUserSelection}>
+              <Ionicons name="log-out-outline" size={16} color="#EF4444" />
+              <Text style={styles.logoutHeaderText}>Log Out</Text>
             </TouchableOpacity>
           </View>
         </View>
-      ) : (
-        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-          
-          {/* HEADER */}
-          <View style={styles.header}>
+
+        {/* ACTIVE CHILD CARD */}
+        <View style={styles.activeChildCard}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Text style={styles.cardTag}>OFFICIAL SCHOOL REPORT</Text>
+            <Text style={{ color: '#9CA3AF', fontSize: normalize(8) }}>{savedProgress.timestamp}</Text>
+          </View>
+
+          <View style={styles.childMetaRow}>
+            <Text style={styles.childEmoji}>
+              {getAvatarEmoji(savedProgress.avatar)}
+            </Text>
             <View>
-              <Text style={styles.subtitle}>PARENTS ECOSYSTEM</Text>
-              <Text style={styles.title}>Gabay-Magulang Portal</Text>
+              <Text style={styles.childName}>{savedProgress.nickname}</Text>
+              <Text style={styles.childSchool}>{savedProgress.school}</Text>
             </View>
           </View>
 
-          {/* DUAL ACTION BUTTONS FOR INPUTTING DATA */}
-          <View style={styles.actionCardContainer}>
-            <Text style={styles.actionSectionTitle}>I-sync ang Progress ng Anak</Text>
-            <View style={styles.dualButtonRow}>
-              
-              {/* SCAN QR BUTTON */}
-              <TouchableOpacity style={styles.actionBtnLive} onPress={() => setIsScanning(true)}>
-                <Ionicons name="camera-outline" size={22} color="white" />
-                <Text style={styles.actionBtnText}>I-scan ang Guro</Text>
-              </TouchableOpacity>
+          <TouchableOpacity 
+            style={styles.practiceBtn} 
+            onPress={() => router.push({
+              pathname: '/parent-dashboard/sandbox' as any,
+              params: { 
+                studentName: savedProgress.nickname,
+                activeAvatar: savedProgress.avatar,
+                selectedChar: 'A'
+              }
+            })}
+          >
+            <MaterialCommunityIcons name="play-circle" size={24} color="#141414" />
+            <Text style={styles.practiceBtnText}>{`Start Practice Session for ${savedProgress.nickname}`}</Text>
+          </TouchableOpacity>
+        </View>
 
-              {/* UPLOAD QR BUTTON */}
-              <TouchableOpacity style={styles.actionBtnUpload} onPress={handleUploadQRImage}>
-                <Ionicons name="image-outline" size={22} color="#F77F67" />
-                <Text style={[styles.actionBtnText, { color: '#F77F67' }]}>I-upload ang QR</Text>
-              </TouchableOpacity>
-
-            </View>
+        {/* METRICS GRID */}
+        <View style={styles.metricsGrid}>
+          <View style={[styles.metricCard, { backgroundColor: '#ECFDF5' }]}>
+            <MaterialCommunityIcons name="target" size={22} color="#10B981" />
+            <Text style={styles.metricValue}>{savedProgress.accuracy}</Text>
+            <Text style={styles.metricLabel}>Accuracy Rate</Text>
           </View>
 
-          {/* ACTIVE CHILD PORTAL CARD & HOME PRACTICE LAUNCHER */}
-          {savedProgress ? (
-            <View style={styles.activeChildCard}>
-              <Text style={styles.cardTag}>AKTIBONG PROPEYL SA BAHAY</Text>
-              <View style={styles.childMetaRow}>
-                <Text style={styles.childEmoji}>
-                  {savedProgress.avatar === 'lion' ? '🦁' : savedProgress.avatar === 'bear' ? '🐻' : '🐰'} 
-                </Text>
-                <View>
-                  <Text style={styles.childName}>{savedProgress.nickname}</Text>
-                  <Text style={styles.childSchool}>{savedProgress.school}</Text>
-                </View>
+          <View style={[styles.metricCard, { backgroundColor: '#EFF6FF' }]}>
+            <Ionicons name="time" size={22} color="#3B82F6" />
+            <Text style={styles.metricValue}>{savedProgress.duration}</Text>
+            <Text style={styles.metricLabel}>Practice Duration</Text>
+          </View>
+        </View>
+
+        {/* REWARDS & STICKERS */}
+        <View style={styles.rewardCard}>
+          <View style={styles.rewardRow}>
+            <View style={styles.rewardItem}>
+              <Ionicons name="star" size={24} color="#F59E0B" />
+              <View style={{ marginLeft: 8 }}>
+                <Text style={styles.rewardCount}>{savedProgress.starsEarned}</Text>
+                <Text style={styles.rewardLabel}>Stars Earned</Text>
               </View>
-
-              {/* PRACTICE MODE BUTTON */}
-              <TouchableOpacity 
-                style={styles.practiceBtn} 
-                onPress={() => router.push({
-                  pathname: '/bakas', 
-                  params: { parentMode: 'true', studentName: savedProgress.nickname }
-                })}
-              >
-                <MaterialCommunityIcons name="play-circle" size={24} color="#141414" />
-                <Text style={styles.practiceBtnText}>Simulan ang Practice sa Bahay</Text>
-              </TouchableOpacity>
             </View>
-          ) : (
-            <View style={styles.emptyCard}>
-              <MaterialCommunityIcons name="account-child-outline" size={48} color="#9CA3AF" />
-              <Text style={styles.emptyText}>Walang aktibong profile ng bata. Gamitin ang mga button sa itaas para mag-scan o mag-upload ng QR code galing sa guro.</Text>
-            </View>
-          )}
 
-          {/* CLASSROOM SCORE HISTORY LOGS */}
+            <View style={styles.rewardDivider} />
+
+            <View style={styles.rewardItem}>
+              <MaterialCommunityIcons name="sticker-emoji" size={24} color="#8B5CF6" />
+              <View style={{ marginLeft: 8 }}>
+                <Text style={styles.rewardCount}>{savedProgress.unlockedStickers.length}</Text>
+                <Text style={styles.rewardLabel}>Stickers Unlocked</Text>
+              </View>
+            </View>
+          </View>
+        </View>
+
+        {/* PER LETTER BREAKDOWN */}
+        {savedProgress.charBreakdown && (
           <View style={styles.historySection}>
-            <Text style={styles.sectionTitle}>📈 Kasaysayan ng Pag-unlad (School Logs)</Text>
-            {pastSessions.length === 0 ? (
-              <Text style={styles.emptySubText}>Mag-scan o mag-upload ng QR pagkatapos ng klase upang makita rito ang mga nakaraang accuracy rate ng bata.</Text>
-            ) : (
-              pastSessions.map((session, idx) => (
-                <View key={idx} style={styles.historyRow}>
-                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                    <Text style={styles.historyIcon}>📊</Text>
-                    <View>
-                      <Text style={styles.historyDate}>{session.timestamp} - Klase sa Paaralan</Text>
-                      <Text style={styles.historyMeta}>{`Katumpakan (Accuracy): ${session.accuracy} | Oras: ${session.duration}`}</Text>
-                    </View>
+            <Text style={styles.sectionTitle}>{`Letter Performance for ${savedProgress.nickname}`}</Text>
+            {Object.entries(savedProgress.charBreakdown).map(([char, data], idx) => (
+              <View key={idx} style={styles.historyRow}>
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <View style={styles.charBoxPlayed}>
+                    <Text style={{ color: 'white', fontWeight: 'bold' }}>{char}</Text>
+                  </View>
+                  <View style={{ marginLeft: 10 }}>
+                    <Text style={styles.historyDate}>{`Letter ${char}`}</Text>
+                    <Text style={styles.historyMeta}>{`Accuracy: ${data.accuracy}`}</Text>
                   </View>
                 </View>
-              ))
-            )}
+                <View style={styles.badgeDone}>
+                  <Text style={styles.badgeTextDone}>COMPLETED</Text>
+                </View>
+              </View>
+            ))}
           </View>
+        )}
 
-        </ScrollView>
-      )}
+        {/* MAIN BOTTOM LOGOUT BUTTON */}
+        <TouchableOpacity style={styles.bottomLogoutBtn} onPress={handleLogoutToUserSelection}>
+          <Ionicons name="log-out-outline" size={20} color="#EF4444" />
+          <Text style={styles.bottomLogoutText}>Exit Parent Portal</Text>
+        </TouchableOpacity>
+
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -240,23 +417,27 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FFFBEB' },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
   scrollContent: { padding: 20, paddingBottom: 50 },
-  header: { marginBottom: 20 },
+  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
   subtitle: { fontSize: normalize(9), color: '#9CA3AF', fontWeight: 'bold' },
-  title: { fontSize: normalize(16), fontWeight: '900', color: '#333', marginTop: 2 },
+  title: { fontSize: normalize(15), fontWeight: '900', color: '#333', marginTop: 2 },
+  rescanHeaderBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12, borderWidth: 1, borderColor: '#F77F67' },
+  rescanHeaderText: { color: '#F77F67', fontSize: normalize(9), fontWeight: 'bold', marginLeft: 4 },
   
-  // Styles para sa Dual Input Card Control
-  actionCardContainer: { backgroundColor: 'white', borderRadius: 25, padding: 18, marginBottom: 20, borderWidth: 1, borderColor: '#F3F4F6' },
-  actionSectionTitle: { fontSize: normalize(11), fontWeight: '900', color: '#333', marginBottom: 12, textTransform: 'uppercase', letterSpacing: 0.5 },
-  dualButtonRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 10 },
-  actionBtnLive: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#F77F67', paddingVertical: 12, borderRadius: 15 },
-  actionBtnUpload: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFF5F3', paddingVertical: 12, borderRadius: 15, borderWidth: 1, borderColor: '#F77F67' },
-  actionBtnText: { color: 'white', fontWeight: 'bold', fontSize: normalize(11), marginLeft: 6 },
+  logoutHeaderBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FEE2E2', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12, borderWidth: 1, borderColor: '#FCA5A5' },
+  logoutHeaderText: { color: '#EF4444', fontSize: normalize(9), fontWeight: 'bold', marginLeft: 4 },
+  
+  overlayScanner: { position: 'absolute', bottom: 40, left: 20, right: 20, alignItems: 'center' },
+  scanNoticeCard: { backgroundColor: 'rgba(20, 20, 20, 0.9)', padding: 18, borderRadius: 20, width: '100%', marginBottom: 15, alignItems: 'center' },
+  scanNoticeTitle: { color: '#4ADE80', fontWeight: 'bold', fontSize: normalize(12), textAlign: 'center', marginBottom: 6 },
+  scanNoticeSub: { color: '#E5E7EB', fontSize: normalize(10), textAlign: 'center', lineHeight: 16, marginBottom: 12 },
+  overlayUploadBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F77F67', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10 },
+  overlayUploadText: { color: 'white', fontSize: normalize(10), fontWeight: 'bold', marginLeft: 6 },
+  cancelScanBtn: { backgroundColor: '#374151', paddingHorizontal: 16, paddingVertical: 12, borderRadius: 15 },
+  logoutScanBtn: { backgroundColor: '#EF4444', paddingHorizontal: 16, paddingVertical: 12, borderRadius: 15, flexDirection: 'row', alignItems: 'center' },
 
-  permissionBtn: { backgroundColor: '#F77F67', padding: 12, borderRadius: 10 },
-  overlayScanner: { position: 'absolute', bottom: 50, left: 20, right: 20, alignItems: 'center' },
-  scannerGuideText: { color: 'white', fontWeight: 'bold', textAlign: 'center', marginBottom: 20, backgroundColor: 'rgba(0,0,0,0.6)', padding: 10, borderRadius: 10 },
-  cancelScanBtn: { backgroundColor: '#EF4444', paddingHorizontal: 20, paddingVertical: 10, borderRadius: 10 },
-  activeChildCard: { backgroundColor: '#141414', borderRadius: 25, padding: 20, marginBottom: 20 },
+  permissionBtn: { backgroundColor: '#F77F67', padding: 14, borderRadius: 12 },
+
+  activeChildCard: { backgroundColor: '#141414', borderRadius: 25, padding: 20, marginBottom: 15 },
   cardTag: { color: '#4ADE80', fontSize: normalize(8), fontWeight: 'bold', letterSpacing: 1 },
   childMetaRow: { flexDirection: 'row', alignItems: 'center', marginTop: 12, marginBottom: 20 },
   childEmoji: { fontSize: normalize(32), marginRight: 15 },
@@ -264,13 +445,47 @@ const styles = StyleSheet.create({
   childSchool: { color: '#9CA3AF', fontSize: normalize(10) },
   practiceBtn: { flexDirection: 'row', backgroundColor: '#4ADE80', padding: 15, borderRadius: 15, justifyContent: 'center', alignItems: 'center' },
   practiceBtnText: { color: '#141414', fontWeight: 'bold', fontSize: normalize(12), marginLeft: 8 },
-  emptyCard: { backgroundColor: 'white', borderRadius: 25, padding: 30, alignItems: 'center', marginBottom: 20, borderWidth: 1, borderColor: '#E5E7EB' },
-  emptyText: { color: '#666', fontSize: normalize(10), textAlign: 'center', marginTop: 10, lineHeight: 16 },
-  historySection: { backgroundColor: 'white', borderRadius: 25, padding: 20 },
+  
+  metricsGrid: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 15 },
+  metricCard: { width: '48%', borderRadius: 20, padding: 15, alignItems: 'center', elevation: 1 },
+  metricValue: { fontSize: normalize(16), fontWeight: '900', color: '#1F2937', marginVertical: 4 },
+  metricLabel: { fontSize: normalize(9), fontWeight: '700', color: '#6B7280' },
+
+  rewardCard: { backgroundColor: '#FFF', borderRadius: 20, padding: 16, marginBottom: 15, borderWidth: 1, borderColor: '#FDE68A' },
+  rewardRow: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center' },
+  rewardItem: { flexDirection: 'row', alignItems: 'center' },
+  rewardCount: { fontSize: normalize(14), fontWeight: '900', color: '#1F2937' },
+  rewardLabel: { fontSize: normalize(9), fontWeight: '700', color: '#78716C' },
+  rewardDivider: { width: 1, height: 30, backgroundColor: '#FDE68A' },
+
+  historySection: { backgroundColor: 'white', borderRadius: 25, padding: 20, marginBottom: 15 },
   sectionTitle: { fontSize: normalize(12), fontWeight: '900', color: '#333', marginBottom: 12 },
-  emptySubText: { color: '#9CA3AF', fontSize: normalize(10), lineHeight: 16, textAlign: 'center', paddingVertical: 10 },
-  historyRow: { paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#F3F4F6', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  historyIcon: { fontSize: normalize(18), marginRight: 10 },
+  historyRow: { paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: '#F3F4F6', flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  charBoxPlayed: { width: 34, height: 34, borderRadius: 10, backgroundColor: '#F77F67', justifyContent: 'center', alignItems: 'center' },
   historyDate: { fontWeight: 'bold', fontSize: normalize(11), color: '#333' },
-  historyMeta: { fontSize: normalize(9), color: '#666', marginTop: 2 }
+  historyMeta: { fontSize: normalize(9), color: '#666', marginTop: 2 },
+  badgeDone: { backgroundColor: '#DCFCE7', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+  badgeTextDone: { color: '#16A34A', fontSize: normalize(8), fontWeight: '900' },
+
+  bottomLogoutBtn: { 
+    flexDirection: 'row', 
+    backgroundColor: '#FFF', 
+    borderWidth: 1.5, 
+    borderColor: '#FCA5A5', 
+    borderRadius: 16, 
+    paddingVertical: 14, 
+    justifyContent: 'center', 
+    alignItems: 'center',
+    shadowColor: '#EF4444',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 1
+  },
+  bottomLogoutText: { 
+    color: '#EF4444', 
+    fontWeight: 'bold', 
+    fontSize: normalize(11), 
+    marginLeft: 8 
+  }
 });
