@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { 
   StyleSheet, 
   Text, 
@@ -27,6 +27,8 @@ import {
 } from 'firebase/firestore';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import QRCode from 'react-native-qrcode-svg';
+import * as MediaLibrary from 'expo-media-library/legacy'; // Inayos dito para sa Expo 58 compatibility
+import * as FileSystem from 'expo-file-system/legacy'; // Inayos din para sa legacy compatibility
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const scale = SCREEN_WIDTH / 375;
@@ -62,6 +64,8 @@ export default function TeacherScreen() {
   const [role, setRole] = useState<string | null>(null);
   const isAdmin = role === 'admin';
   
+  const qrRef = useRef<any>(null); // Reference para sa QR Code
+
   const [teacherFirstName, setTeacherFirstName] = useState<string>('');
   const [activeStudentAvatar, setActiveStudentAvatar] = useState<string | null>(null); 
   const [updatingSession, setUpdatingSession] = useState(false);
@@ -244,7 +248,6 @@ export default function TeacherScreen() {
     }
   };
 
-  // 🎯 UPDATE: KUMPLETONG PROGRESS REPORT SCHEME PARA SA QR CODE
   const handleEndSessionAndCompileQR = async () => {
     const currentUser = auth.currentUser;
     if (!currentUser || !activeStudentAvatar) return;
@@ -331,6 +334,44 @@ export default function TeacherScreen() {
         }
       ]
     );
+  };
+
+  // 🎯 FUNCTION PARA I-SAVE ANG QR CODE SA GALLERY (JPEG)
+  const handleSaveQRCode = async () => {
+    if (!qrRef.current) {
+      Alert.alert("Error", "Walang QR Code na pwedeng i-save.");
+      return;
+    }
+
+    try {
+      qrRef.current.toDataURL(async (dataURL: string) => {
+        const { status } = await MediaLibrary.requestPermissionsAsync();
+        if (status !== 'granted') {
+          Alert.alert(
+            lang === 'ph' ? "Kailangan ng Permission" : "Permission Required",
+            lang === 'ph' ? "Kailangan ng access sa Photos para mai-save ang QR code image." : "Photo library access is required to save the QR code."
+          );
+          return;
+        }
+
+        const filename = `BakasAral_QR_${Date.now()}.jpg`;
+        const fileUri = `${FileSystem.documentDirectory}${filename}`;
+
+        await FileSystem.writeAsStringAsync(fileUri, dataURL, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+
+        await MediaLibrary.createAssetAsync(fileUri);
+
+        Alert.alert(
+          lang === 'ph' ? "Na-save na! 🎉" : "Saved! 🎉",
+          lang === 'ph' ? "Nakatago na ang QR Code JPEG image sa iyong Phone Gallery." : "The QR Code JPEG image is now saved in your phone gallery."
+        );
+      });
+    } catch (error: any) {
+      console.error("Save QR Error:", error);
+      Alert.alert("Error", "Bigo sa pag-save ng QR Code image.");
+    }
   };
 
   const handleViewPastQR = (qrString: string) => {
@@ -443,13 +484,30 @@ export default function TeacherScreen() {
           <View style={styles.qrWrapper}>
             {activeQRToShow && decodedObj ? (
               <View style={{ alignItems: 'center' }}>
-                <QRCode value={activeQRToShow} size={normalize(140)} backgroundColor="white" color="black" />
+                <QRCode 
+                  value={activeQRToShow} 
+                  size={normalize(140)} 
+                  backgroundColor="white" 
+                  color="black" 
+                  getRef={(c) => (qrRef.current = c)}
+                />
                 <Text style={styles.qrGeneratedAlert}>
                   {`✓ Data Compiled for: ${decodedObj.nickname} (${ANIMAL_AVATARS.find(a => a.id === decodedObj.avatar)?.emoji || ''})`}
                 </Text>
                 <Text style={{ fontSize: normalize(9), color: '#666', marginTop: 2 }}>
                   {`Teacher: ${decodedObj.teacherName || teacherFirstName} | Accuracy: ${decodedObj.accuracy}`}
                 </Text>
+
+                <TouchableOpacity 
+                  style={styles.saveQrBtn} 
+                  onPress={handleSaveQRCode}
+                >
+                  <Ionicons name="download-outline" size={16} color="white" />
+                  <Text style={styles.saveQrBtnText}>
+                    {lang === 'ph' ? 'I-save bilang JPEG Image' : 'Save as JPEG Image'}
+                  </Text>
+                </TouchableOpacity>
+
                 {selectedPastQR && (
                   <TouchableOpacity style={styles.resetViewBtn} onPress={() => setSelectedPastQR(null)}>
                     <Text style={styles.resetViewBtnText}>{lang === 'ph' ? 'I-clear at Bumalik' : 'Clear & Return'}</Text>
@@ -665,6 +723,23 @@ const styles = StyleSheet.create({
   qrDescription: { fontSize: normalize(9), color: '#666', marginBottom: 15, lineHeight: 15 },
   qrWrapper: { alignItems: 'center', justifyContent: 'center', paddingVertical: 15, backgroundColor: '#FAFAFA', borderRadius: 18, borderWidth: 1, borderColor: '#F3F4F6' },
   qrGeneratedAlert: { color: '#16A34A', fontSize: normalize(11), fontWeight: 'bold', marginTop: 12, textAlign: 'center' },
+  
+  saveQrBtn: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    backgroundColor: '#16A34A', 
+    paddingHorizontal: 14, 
+    paddingVertical: 8, 
+    borderRadius: 10, 
+    marginTop: 12 
+  },
+  saveQrBtnText: { 
+    color: 'white', 
+    fontSize: normalize(10), 
+    fontWeight: 'bold', 
+    marginLeft: 6 
+  },
+
   resetViewBtn: { marginTop: 10, backgroundColor: '#E0F2FE', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
   resetViewBtnText: { color: '#0369A1', fontSize: normalize(10), fontWeight: 'bold' },
 

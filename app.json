@@ -7,11 +7,13 @@
     "icon": "./assets/images/icon.png",
     "scheme": "neubakas",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "newArchEnabled": true
     },
     "android": {
+      "enableProguardInReleaseBuilds": false,
+      "newArchEnabled": true,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png"
@@ -38,6 +40,18 @@
       "expo-status-bar",
       "expo-web-browser",
       [
+        "expo-build-properties",
+        {
+          "android": {
+            "enableProguardInReleaseBuilds": false,
+            "extraOptions": {
+              "android.lintOptions.checkReleaseBuilds": "false",
+              "android.lintOptions.abortOnError": "false"
+            }
+          }
+        }
+      ],
+      [
         "expo-camera",
         {
           "cameraPermission": "NEU-Bakás needs camera access to scan teacher QR codes."
@@ -49,8 +63,17 @@
           "photosPermission": "NEU-Bakás needs photo library access to scan QR images."
         }
       ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "NEU-Bakás needs access to save QR report images.",
+          "savePhotosPermission": "NEU-Bakás needs permission to save QR report images."
+        }
+      ],
+      "expo-asset",
       "expo-av",
-      "expo-audio"
+      "expo-audio",
+      "expo-sharing"
     ],
     "experiments": {
       "typedRoutes": true

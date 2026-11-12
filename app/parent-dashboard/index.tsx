@@ -16,9 +16,8 @@ import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
-import * as FileSystem from 'expo-file-system';
+import { File } from 'expo-file-system';
 import jsQR from 'jsqr';
-import { decode as decodeBase64 } from 'base64-js';
 import { decode as decodeJpeg } from 'jpeg-js';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -127,6 +126,7 @@ export default function ParentsDashboardScreen() {
       if (!result.canceled && result.assets && result.assets[0]) {
         const selectedImageUri = result.assets[0].uri;
 
+        // 1. Native CameraView Scanner (Gumagana sa PNG, JPG, HEIC, etc.)
         try {
           const scanFn = (CameraView as any).scanFromImageAsync;
           if (typeof scanFn === 'function') {
@@ -137,16 +137,24 @@ export default function ParentsDashboardScreen() {
             }
           }
         } catch (e) {
-          // Fall back to JS decoder if native scanning fails
+          console.log("Native scanning bypassed, attempting JS fallback:", e);
         }
 
+        // 2. JS Fallback Scanner (May proteksyon sa SOI / non-JPEG errors)
         try {
-          const base64 = await FileSystem.readAsStringAsync(selectedImageUri, {
-            encoding: FileSystem.EncodingType.Base64,
-          });
+          const file = new File(selectedImageUri);
+          const byteArray = await file.bytes();
 
-          const byteArray = decodeBase64(base64);
-          const rawImageData = decodeJpeg(byteArray, { useTArray: true });
+          let rawImageData;
+          try {
+            rawImageData = decodeJpeg(byteArray, { useTArray: true });
+          } catch (jpegErr) {
+            Alert.alert(
+              "Format Not Supported",
+              "Please select a standard JPG/JPEG photo of the QR code, or scan it directly using the camera."
+            );
+            return;
+          }
 
           const code = jsQR(
             Uint8ClampedArray.from(rawImageData.data),
@@ -166,7 +174,7 @@ export default function ParentsDashboardScreen() {
           console.error("Error decoding JS QR:", decodeErr);
           Alert.alert(
             "Unreadable QR Code", 
-            "Unable to process the image format. Please select a JPEG/JPG image."
+            "Unable to process the image. Please try taking a screenshot or selecting a clearer JPEG image."
           );
         }
       }

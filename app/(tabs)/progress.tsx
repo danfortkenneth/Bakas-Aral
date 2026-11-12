@@ -48,13 +48,10 @@ export default function ProgressScreen() {
     '1', '2', '3', '4', '5', '6', '7', '8', '9', '0'
   ];
 
-  const totalMaxStickers = 10;
-
   useEffect(() => {
     let unsubscribeTeacher: () => void = () => {};
     let unsubscribeSessions: () => void = () => {};
 
-    // 🎨 Load Offline Stickers synced via QR Scanner
     async function fetchLocalStickers() {
       try {
         const localData = await loadParentSync();
@@ -130,7 +127,7 @@ export default function ProgressScreen() {
       let count = 0;
       let totalSecondsSum = 0;
       let computedStars = 0;
-      const tempCharStats: CharacterStats = {};
+      const tempCharStats: Record<string, { totalAcc: number; count: number; totalDuration: number }> = {};
       const dayCounts: { [key: number]: number } = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 };
 
       querySnapshot.forEach((docSnap) => {
@@ -248,7 +245,7 @@ export default function ProgressScreen() {
           </View>
         </View>
 
-        {/* 🎁 FEATURE 3: REWARD SUMMARY BANNER */}
+        {/* REWARD SUMMARY BANNER */}
         {activeStudentId && !loading && (
           <View style={styles.rewardCard}>
             <View style={styles.rewardRow}>
@@ -273,7 +270,7 @@ export default function ProgressScreen() {
           </View>
         )}
 
-        {/* 🎨 STICKER COLLECTION DISPLAY IN DASHBOARD */}
+        {/* STICKER COLLECTION DISPLAY */}
         {activeStudentId && !loading && (
           <View style={styles.stickerGalleryCard}>
             <Text style={styles.cardHeaderTitle}>
@@ -304,7 +301,7 @@ export default function ProgressScreen() {
           </View>
         )}
 
-        {/* 💡 FEATURE 1: SMART LEARNING INSIGHTS & RECOMMENDATIONS */}
+        {/* SMART LEARNING INSIGHTS & RECOMMENDATIONS */}
         {activeStudentId && !loading && (
           <View style={styles.insightsCard}>
             <View style={styles.insightsHeader}>
@@ -358,7 +355,7 @@ export default function ProgressScreen() {
           </View>
         )}
 
-        {/* ⏱️ FEATURE 2: DURATION & OVERALL METRICS CARDS */}
+        {/* METRICS GRID */}
         <View style={styles.metricsGrid}>
           <View style={[styles.metricCard, { backgroundColor: '#EFF6FF' }]}>
             <Ionicons name="time" size={22} color="#3B82F6" />
@@ -448,7 +445,6 @@ const styles = StyleSheet.create({
   mainTitle: { fontSize: normalize(16), fontWeight: '900', color: '#1C1917' },
   avatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#F77F67', justifyContent: 'center', alignItems: 'center' },
 
-  // REWARD BANNER STYLES
   rewardCard: { backgroundColor: '#FFFBEB', borderColor: '#FDE68A', borderWidth: 1.5, borderRadius: 24, padding: 16, marginBottom: 15, elevation: 1 },
   rewardRow: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center' },
   rewardItem: { flexDirection: 'row', alignItems: 'center' },
@@ -456,7 +452,6 @@ const styles = StyleSheet.create({
   rewardLabel: { fontSize: normalize(9), fontWeight: '700', color: '#78716C' },
   rewardDivider: { width: 1, height: 30, backgroundColor: '#FDE68A' },
   
-  // STICKER GALLERY STYLES
   stickerGalleryCard: { backgroundColor: 'white', borderRadius: 24, padding: 16, marginBottom: 15, elevation: 2 },
   emptyStickerBox: { padding: 15, alignItems: 'center' },
   emptyStickerText: { fontSize: normalize(10), color: '#9CA3AF', textAlign: 'center', marginTop: 6 },
@@ -464,7 +459,6 @@ const styles = StyleSheet.create({
   stickerIconCircle: { width: 50, height: 50, borderRadius: 25, backgroundColor: '#F3E8FF', justifyContent: 'center', alignItems: 'center', borderWidth: 1, borderColor: '#DDD6FE' },
   stickerNameText: { fontSize: normalize(9), fontWeight: '700', color: '#4B5563', marginTop: 4, textAlign: 'center' },
 
-  // INSIGHTS CARD STYLES
   insightsCard: { backgroundColor: 'white', borderRadius: 24, padding: 16, marginBottom: 15, elevation: 2 },
   insightsHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
   insightsTitle: { fontSize: normalize(12), fontWeight: '800', color: '#1F2937', marginLeft: 6 },
@@ -472,7 +466,6 @@ const styles = StyleSheet.create({
   insightLabel: { fontSize: normalize(10), fontWeight: '800', color: '#374151' },
   insightValue: { fontSize: normalize(11), fontWeight: '600', color: '#4B5563', marginTop: 1 },
 
-  // METRICS GRID STYLES
   metricsGrid: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 15 },
   metricCard: { width: '48%', borderRadius: 20, padding: 15, alignItems: 'center', elevation: 1 },
   metricValue: { fontSize: normalize(16), fontWeight: '900', color: '#1F2937', marginVertical: 4 },
