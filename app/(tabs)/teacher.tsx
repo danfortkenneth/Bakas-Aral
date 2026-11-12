@@ -354,7 +354,8 @@ export default function TeacherScreen() {
           return;
         }
 
-        const filename = `BakasAral_QR_${Date.now()}.jpg`;
+        // toDataURL returns a PNG data URL — keep the extension consistent so scanners detect it correctly.
+        const filename = `BakasAral_QR_${Date.now()}.png`;
         const fileUri = `${FileSystem.documentDirectory}${filename}`;
 
         await FileSystem.writeAsStringAsync(fileUri, dataURL, {
@@ -365,7 +366,7 @@ export default function TeacherScreen() {
 
         Alert.alert(
           lang === 'ph' ? "Na-save na! 🎉" : "Saved! 🎉",
-          lang === 'ph' ? "Nakatago na ang QR Code JPEG image sa iyong Phone Gallery." : "The QR Code JPEG image is now saved in your phone gallery."
+          lang === 'ph' ? "Nakatago na ang QR Code image sa iyong Phone Gallery." : "The QR Code image is now saved in your phone gallery."
         );
       });
     } catch (error: any) {
@@ -504,7 +505,7 @@ export default function TeacherScreen() {
                 >
                   <Ionicons name="download-outline" size={16} color="white" />
                   <Text style={styles.saveQrBtnText}>
-                    {lang === 'ph' ? 'I-save bilang JPEG Image' : 'Save as JPEG Image'}
+                    {lang === 'ph' ? 'I-save bilang Image' : 'Save as Image'}
                   </Text>
                 </TouchableOpacity>
 

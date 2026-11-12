@@ -2,7 +2,7 @@ import React from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, SafeAreaView, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { CameraView } from 'expo-camera';
+import { scanFromURLAsync } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import { parseParentQR, saveParentQRPayload } from '../../lib/parentSync';
 
@@ -36,16 +36,16 @@ export default function QRScannerPortal() {
       }
 
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
+        mediaTypes: ['images'],
+        allowsEditing: false,
         quality: 1,
       });
 
       if (!result.canceled && result.assets && result.assets[0]) {
         const selectedImageUri = result.assets[0].uri;
 
-        // I-scan ang QR mula sanapiling image URI
-        const scannedResults = await (CameraView as any).scanFromImageAsync(selectedImageUri, ["qr"]);
+        // Native barcode scanner — supports JPG, PNG, HEIC, WebP, etc.
+        const scannedResults = await scanFromURLAsync(selectedImageUri, ['qr']);
         
         if (scannedResults && scannedResults.length > 0) {
           handleProcessScannedQR(scannedResults[0].data);

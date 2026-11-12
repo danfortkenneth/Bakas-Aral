@@ -14,7 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { CameraView, useCameraPermissions } from 'expo-camera';
+import { CameraView, useCameraPermissions, scanFromURLAsync } from 'expo-camera';
 import * as ImagePicker from 'expo-image-picker';
 import { File } from 'expo-file-system';
 import jsQR from 'jsqr';
@@ -134,15 +134,12 @@ export default function ParentsDashboardScreen() {
       if (!result.canceled && result.assets && result.assets[0]) {
         const selectedImageUri = result.assets[0].uri;
 
-        // 1. Native CameraView Scanner (Gumagana sa PNG, JPG, HEIC, etc.)
+        // 1. Native scanner — supports JPG, PNG, HEIC, WebP, etc.
         try {
-          const scanFn = (CameraView as any).scanFromImageAsync;
-          if (typeof scanFn === 'function') {
-            const scannedResults = await scanFn(selectedImageUri, ["qr"]);
-            if (scannedResults && scannedResults.length > 0) {
-              processQRData(scannedResults[0].data);
-              return;
-            }
+          const scannedResults = await scanFromURLAsync(selectedImageUri, ['qr']);
+          if (scannedResults && scannedResults.length > 0) {
+            processQRData(scannedResults[0].data);
+            return;
           }
         } catch (e) {
           console.log("Native scanning bypassed, attempting JS fallback:", e);
@@ -158,8 +155,8 @@ export default function ParentsDashboardScreen() {
             rawImageData = decodeJpeg(byteArray, { useTArray: true });
           } catch {
             Alert.alert(
-              "Format Not Supported",
-              "Please select a standard JPG/JPEG photo of the QR code, or scan it directly using the camera."
+              "No QR Code Found",
+              "The selected image could not be read. Make sure the QR code is clear, complete, and well-lit — or scan it directly with the camera."
             );
             return;
           }
