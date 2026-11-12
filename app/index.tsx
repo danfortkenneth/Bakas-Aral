@@ -12,7 +12,7 @@ import {
 import { useRouter } from 'expo-router';
 import { useLanguage } from './_layout';
 
-const { width, height } = Dimensions.get('window');
+const { width } = Dimensions.get('window');
 
 // LIGTAS NA SCALE FONT FIX PARA SA WEB AT MOBILE
 const isTablet = width >= 768;

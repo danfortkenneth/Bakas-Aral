@@ -40,7 +40,10 @@ export default function RootLayout() {
   });
   const [loading, setLoading] = useState(true);
   const langRef = useRef(lang);
-  langRef.current = lang;
+
+  useEffect(() => {
+    langRef.current = lang;
+  }, [lang]);
 
   useEffect(() => {
     let unsubscribeUserDoc: (() => void) | null = null;

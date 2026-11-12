@@ -9,16 +9,25 @@ export default function StickerBook() {
   const [hearts, setHearts] = useState(3);
 
   useEffect(() => {
-    loadStickers();
-  }, []);
+    let cancelled = false;
 
-  const loadStickers = async () => {
-    const stored = await AsyncStorage.getItem('@collected_stickers');
-    if (stored) {
-      const parsed = JSON.parse(stored);
-      setStickers([...stickers, ...parsed]);
-    }
-  };
+    const hydrate = async () => {
+      try {
+        const stored = await AsyncStorage.getItem('@collected_stickers');
+        if (!stored || cancelled) return;
+        const parsed: string[] = JSON.parse(stored);
+        setStickers(prev => [...prev, ...parsed]);
+      } catch (error) {
+        console.warn('Failed to load stickers:', error);
+      }
+    };
+
+    hydrate();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleFeedAnimal = () => {
     setHearts(prev => prev + 1);

@@ -35,40 +35,36 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
   const router = useRouter();
   const { lang } = useLanguage();
   const { firebaseUser } = useUser();
-  const [role, setRole] = useState<'admin' | 'teacher' | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [roleState, setRoleState] = useState<'admin' | 'teacher' | null>(null);
+  const [loadedUid, setLoadedUid] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!firebaseUser) {
-      setRole(null);
-      setLoading(false);
-      return;
-    }
+    if (!firebaseUser) return;
 
-    setLoading(true);
-    const userRef = doc(db, "users", firebaseUser.uid);
-    
+    const uid = firebaseUser.uid;
+    const userRef = doc(db, "users", uid);
+
     const unsubscribeDoc = onSnapshot(userRef, (docSnap) => {
-      if (docSnap.exists()) {
-        const userRole = docSnap.data().role;
-        setRole(userRole);
+      const userRole = docSnap.exists() ? docSnap.data().role : 'teacher';
+      setRoleState(userRole);
+      setLoadedUid(uid);
 
-        if (userRole === 'admin' && navigation?.navigate) {
-          navigation.navigate('admin-dashboard');
-        }
-      } else {
-        setRole('teacher');
+      if (userRole === 'admin' && navigation?.navigate) {
+        navigation.navigate('admin-dashboard');
       }
-      setLoading(false);
     }, (error) => {
       console.log("Error checking role inside tabbar handled gracefully:", error.message);
-      setLoading(false);
+      setLoadedUid(uid);
     });
 
     return () => {
       unsubscribeDoc();
     };
   }, [firebaseUser, navigation]);
+
+  // Derive these instead of calling setState synchronously inside the effect
+  const role = firebaseUser ? roleState : null;
+  const loading = !!firebaseUser && loadedUid !== firebaseUser.uid;
 
   if (loading) {
     return (

@@ -15,7 +15,6 @@ import {
   ActivityIndicator
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useLanguage } from '../_layout'; 
 
 import { auth, db } from '../../lib/firebase';
 import { signInWithEmailAndPassword, signOut, sendPasswordResetEmail } from 'firebase/auth';
@@ -33,7 +32,6 @@ const normalize = (size: number) => {
 
 export default function LoginPage() {
   const router = useRouter();
-  const { lang } = useLanguage();
   
   const [role, setRole] = useState<'teacher' | 'admin'>('teacher');
   const [employeeId, setEmployeeId] = useState('');

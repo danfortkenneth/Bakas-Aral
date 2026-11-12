@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, Text, View, ScrollView, SafeAreaView, Dimensions, PixelRatio, ActivityIndicator } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useLanguage } from '../_layout';
@@ -20,16 +20,24 @@ interface DayActivity {
   count: number;
 }
 
+const AVAILABLE_ITEMS = [
+  'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
+  'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
+  '1', '2', '3', '4', '5', '6', '7', '8', '9', '0'
+];
+
 export default function ProgressScreen() {
   const { lang } = useLanguage();
-  const dayNames = lang === 'ph' 
-    ? ['Lin', 'Lun', 'Mar', 'Miy', 'Huw', 'Biy', 'Sab'] 
-    : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const dayNames = useMemo(
+    () => lang === 'ph'
+      ? ['Lin', 'Lun', 'Mar', 'Miy', 'Huw', 'Biy', 'Sab']
+      : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
+    [lang]
+  );
 
   const [activeStudentId, setActiveStudentId] = useState<string | null>(null);
   const [activeStudentName, setActiveStudentName] = useState<string>('---');
   const [avgAccuracy, setAvgAccuracy] = useState<number>(0);
-  const [totalSessions, setTotalSessions] = useState<number>(0);
   const [totalDurationSeconds, setTotalDurationSeconds] = useState<number>(0);
   const [totalStars, setTotalStars] = useState<number>(0);
   const [unlockedStickersList, setUnlockedStickersList] = useState<string[]>([]);
@@ -42,15 +50,105 @@ export default function ProgressScreen() {
   const [weakChar, setWeakChar] = useState<{ char: string; acc: number } | null>(null);
   const [nextRecommended, setNextRecommended] = useState<string | null>(null);
 
-  const availableItems = [
-    'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
-    'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
-    '1', '2', '3', '4', '5', '6', '7', '8', '9', '0'
-  ];
-
   useEffect(() => {
     let unsubscribeTeacher: () => void = () => {};
     let unsubscribeSessions: () => void = () => {};
+
+    const listenToStudentProgress = (studentId: string) => {
+      const sessionsQuery = query(collection(db, "sessions"), where("userId", "==", studentId));
+
+      return onSnapshot(sessionsQuery, (querySnapshot) => {
+        let totalAcc = 0;
+        let count = 0;
+        let totalSecondsSum = 0;
+        let computedStars = 0;
+        const tempCharStats: Record<string, { totalAcc: number; count: number; totalDuration: number }> = {};
+        const dayCounts: { [key: number]: number } = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 };
+
+        querySnapshot.forEach((docSnap) => {
+          const data = docSnap.data();
+          const char = data.letterOrNumber;
+          const acc = data.accuracy;
+          const dur = data.durationSeconds || data.duration || 0;
+          const timestamp = data.createdAt?.toDate ? data.createdAt.toDate() : new Date();
+
+          if (typeof acc === 'number') {
+            totalAcc += acc;
+            count++;
+
+            if (acc >= 85) computedStars += 3;
+            else if (acc >= 70) computedStars += 2;
+            else if (acc >= 50) computedStars += 1;
+
+            let parsedSec = 0;
+            if (typeof dur === 'number') {
+              parsedSec = dur;
+            } else if (typeof dur === 'string') {
+              parsedSec = parseInt(dur.replace(/[^0-9]/g, ''), 10) || 0;
+            }
+            totalSecondsSum += parsedSec;
+
+            const dayOfWeek = timestamp.getDay();
+            dayCounts[dayOfWeek] = (dayCounts[dayOfWeek] || 0) + 1;
+
+            if (char) {
+              if (!tempCharStats[char]) {
+                tempCharStats[char] = { totalAcc: acc, count: 1, totalDuration: parsedSec };
+              } else {
+                tempCharStats[char].totalAcc += acc;
+                tempCharStats[char].count += 1;
+                tempCharStats[char].totalDuration += parsedSec;
+              }
+            }
+          }
+        });
+
+        const finalizedStats: CharacterStats = {};
+        let highestAcc = -1;
+        let lowestAcc = 101;
+        let topItem: { char: string; acc: number } | null = null;
+        let bottomItem: { char: string; acc: number } | null = null;
+
+        Object.keys(tempCharStats).forEach((key) => {
+          const item = tempCharStats[key];
+          const calcAcc = Math.round(item.totalAcc / item.count);
+          finalizedStats[key] = {
+            accuracy: calcAcc,
+            count: item.count,
+            totalDuration: item.totalDuration
+          };
+
+          if (calcAcc > highestAcc) {
+            highestAcc = calcAcc;
+            topItem = { char: key, acc: calcAcc };
+          }
+          if (calcAcc < lowestAcc) {
+            lowestAcc = calcAcc;
+            bottomItem = { char: key, acc: calcAcc };
+          }
+        });
+
+        const unattempted = AVAILABLE_ITEMS.find(item => !finalizedStats[item]);
+
+        const formattedWeekly: DayActivity[] = dayNames.map((name, index) => ({
+          dayLabel: name,
+          count: dayCounts[index] || 0
+        }));
+
+        setWeeklyData(formattedWeekly);
+        setCharStats(finalizedStats);
+        setBestChar(topItem);
+        setWeakChar(bottomItem);
+        setNextRecommended(unattempted || null);
+        setAvgAccuracy(count > 0 ? Math.round(totalAcc / count) : 100);
+        setTotalDurationSeconds(totalSecondsSum);
+        setTotalStars(computedStars);
+        setLoading(false);
+      }, (error) => {
+        console.warn("Student progress error:", error.message);
+        setLoading(false);
+      });
+    };
 
     async function fetchLocalStickers() {
       try {
@@ -69,7 +167,6 @@ export default function ProgressScreen() {
         setActiveStudentId(null);
         setActiveStudentName(lang === 'ph' ? 'Walang napiling bata' : 'No student selected');
         setAvgAccuracy(0);
-        setTotalSessions(0);
         setTotalDurationSeconds(0);
         setTotalStars(0);
         setCharStats({});
@@ -97,7 +194,6 @@ export default function ProgressScreen() {
             unsubscribeSessions = listenToStudentProgress(currentStudentId);
           } else {
             setAvgAccuracy(0);
-            setTotalSessions(0);
             setTotalDurationSeconds(0);
             setTotalStars(0);
             setCharStats({});
@@ -117,104 +213,7 @@ export default function ProgressScreen() {
       unsubscribeTeacher();
       unsubscribeSessions();
     };
-  }, [lang]);
-
-  const listenToStudentProgress = (studentId: string) => {
-    const sessionsQuery = query(collection(db, "sessions"), where("userId", "==", studentId));
-
-    return onSnapshot(sessionsQuery, (querySnapshot) => {
-      let totalAcc = 0;
-      let count = 0;
-      let totalSecondsSum = 0;
-      let computedStars = 0;
-      const tempCharStats: Record<string, { totalAcc: number; count: number; totalDuration: number }> = {};
-      const dayCounts: { [key: number]: number } = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 };
-
-      querySnapshot.forEach((docSnap) => {
-        const data = docSnap.data();
-        const char = data.letterOrNumber;
-        const acc = data.accuracy;
-        const dur = data.durationSeconds || data.duration || 0;
-        const timestamp = data.createdAt?.toDate ? data.createdAt.toDate() : new Date();
-
-        if (typeof acc === 'number') {
-          totalAcc += acc;
-          count++;
-
-          if (acc >= 85) computedStars += 3;
-          else if (acc >= 70) computedStars += 2;
-          else if (acc >= 50) computedStars += 1;
-
-          let parsedSec = 0;
-          if (typeof dur === 'number') {
-            parsedSec = dur;
-          } else if (typeof dur === 'string') {
-            parsedSec = parseInt(dur.replace(/[^0-9]/g, ''), 10) || 0;
-          }
-          totalSecondsSum += parsedSec;
-
-          const dayOfWeek = timestamp.getDay();
-          dayCounts[dayOfWeek] = (dayCounts[dayOfWeek] || 0) + 1;
-
-          if (char) {
-            if (!tempCharStats[char]) {
-              tempCharStats[char] = { totalAcc: acc, count: 1, totalDuration: parsedSec };
-            } else {
-              tempCharStats[char].totalAcc += acc;
-              tempCharStats[char].count += 1;
-              tempCharStats[char].totalDuration += parsedSec;
-            }
-          }
-        }
-      });
-
-      const finalizedStats: CharacterStats = {};
-      let highestAcc = -1;
-      let lowestAcc = 101;
-      let topItem: { char: string; acc: number } | null = null;
-      let bottomItem: { char: string; acc: number } | null = null;
-
-      Object.keys(tempCharStats).forEach((key) => {
-        const item = tempCharStats[key];
-        const calcAcc = Math.round(item.totalAcc / item.count);
-        finalizedStats[key] = {
-          accuracy: calcAcc,
-          count: item.count,
-          totalDuration: item.totalDuration
-        };
-
-        if (calcAcc > highestAcc) {
-          highestAcc = calcAcc;
-          topItem = { char: key, acc: calcAcc };
-        }
-        if (calcAcc < lowestAcc) {
-          lowestAcc = calcAcc;
-          bottomItem = { char: key, acc: calcAcc };
-        }
-      });
-
-      const unattempted = availableItems.find(item => !finalizedStats[item]);
-
-      const formattedWeekly: DayActivity[] = dayNames.map((name, index) => ({
-        dayLabel: name,
-        count: dayCounts[index] || 0
-      }));
-
-      setWeeklyData(formattedWeekly);
-      setCharStats(finalizedStats);
-      setBestChar(topItem);
-      setWeakChar(bottomItem);
-      setNextRecommended(unattempted || null);
-      setAvgAccuracy(count > 0 ? Math.round(totalAcc / count) : 100);
-      setTotalSessions(count);
-      setTotalDurationSeconds(totalSecondsSum);
-      setTotalStars(computedStars);
-      setLoading(false);
-    }, (error) => {
-      console.warn("Student progress error:", error.message);
-      setLoading(false);
-    });
-  };
+  }, [lang, dayNames]);
 
   const formatTime = (totalSec: number) => {
     if (totalSec <= 0) return '0s';
@@ -399,7 +398,7 @@ export default function ProgressScreen() {
           {loading ? <ActivityIndicator size="large" color="#F77F67" style={{ marginVertical: 20 }} /> : !activeStudentId ? (
             <Text style={styles.emptyText}>{lang === 'ph' ? 'Walang datos.' : 'No data available.'}</Text>
           ) : (
-            availableItems.map((item) => {
+            AVAILABLE_ITEMS.map((item) => {
               const stat = charStats[item];
               const hasPlayed = stat && stat.count > 0;
               const avgCharTime = hasPlayed ? Math.round(stat.totalDuration / stat.count) : 0;

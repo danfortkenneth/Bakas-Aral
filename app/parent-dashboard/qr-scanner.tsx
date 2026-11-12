@@ -20,7 +20,7 @@ export default function QRScannerPortal() {
         `Tagumpay na naipatala ang datos ni ${parsedPayload.nickname}.`, 
         [{ text: "Tingnan ang Report", onPress: () => router.replace('/parent-dashboard/progress') }]
       );
-    } catch (e: any) {
+    } catch {
       Alert.alert("Error sa QR Code", "Hindi nababasa ang QR Code o hindi ito mula sa Bakas-Aral Teacher app.");
     }
   };

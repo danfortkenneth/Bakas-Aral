@@ -241,7 +241,7 @@ export default function TeacherScreen() {
         lang === 'ph' ? "Sesyon Nagsimula!" : "Session Started!", 
         lang === 'ph' ? `Aktibo na si ${student.fullName} sa Tablet.` : `Session is now active for ${student.fullName} on Tablet.`
       );
-    } catch (error) {
+    } catch {
       Alert.alert("Error", "Hindi ma-isave ang sesyon.");
     } finally {
       setUpdatingSession(false);
@@ -384,7 +384,7 @@ export default function TeacherScreen() {
   if (activeQRToShow) {
     try {
       decodedObj = JSON.parse(activeQRToShow);
-    } catch (e) {
+    } catch {
       decodedObj = null;
     }
   }

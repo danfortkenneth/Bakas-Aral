@@ -94,7 +94,7 @@ export default function SandboxScreen() {
   
   const hitPoints = useRef<number[]>([]);
   const totalPointsCount = charData.points.length;
-  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const [fadeAnim] = useState(() => new Animated.Value(0));
 
   const totalMoves = useRef<number>(0);
   const errorMoves = useRef<number>(0);
@@ -104,6 +104,18 @@ export default function SandboxScreen() {
   const errorPlayerRef = useRef<any>(null);
   const crunchPlayerRef = useRef<any>(null);
   const lastErrorSoundTime = useRef<number>(0);
+
+  const handleReset = () => {
+    setPaths([]);
+    setIsOnPath(true);
+    setIsFinished(false);
+    setIsAnimalFed(false);
+    hitPoints.current = [];
+    totalMoves.current = 0;
+    errorMoves.current = 0;
+    fadeAnim.setValue(0);
+    setAccuracy(100);
+  };
 
   const handleExitOrContinue = () => {
     router.replace('/parent-dashboard' as any);
@@ -148,15 +160,19 @@ export default function SandboxScreen() {
       console.log("Error initializing character audio players:", e);
     }
 
+    // Resetting tracing state on character change is intentional.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     handleReset(); 
 
     return () => {
       try {
         if (phoneticPlayerRef.current) phoneticPlayerRef.current.remove();
         if (successPlayerRef.current) successPlayerRef.current.remove();
-      } catch (e) {}
+      } catch {}
     };
-  }, [selectedChar]);
+    // handleReset only touches stable setters/refs, so it is intentionally omitted.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedChar, charData.phoneticSound, charData.wordSound]);
 
   useEffect(() => {
     try {
@@ -170,7 +186,7 @@ export default function SandboxScreen() {
       try {
         if (errorPlayerRef.current) errorPlayerRef.current.remove();
         if (crunchPlayerRef.current) crunchPlayerRef.current.remove();
-      } catch (e) {}
+      } catch {}
     };
   }, []);
 
@@ -191,7 +207,7 @@ export default function SandboxScreen() {
       historyArray.unshift(practiceRecord);
 
       await AsyncStorage.setItem('@parent_sync_history', JSON.stringify(historyArray));
-    } catch (error) {
+    } catch {
       console.log("Saved practice locally.");
     } finally {
       setSaving(false);
@@ -244,7 +260,7 @@ export default function SandboxScreen() {
           try {
             errorPlayerRef.current.seekTo(0);
             errorPlayerRef.current.play();
-          } catch (e) {}
+          } catch {}
         }
       }
     } else {
@@ -253,7 +269,9 @@ export default function SandboxScreen() {
     }
   };
 
-  const panResponder = useRef(
+  // PanResponder callbacks run in gesture handlers, not during render; refs are safe here.
+  // eslint-disable-next-line react-hooks/refs
+  const [panResponder] = useState(() =>
     PanResponder.create({
       onStartShouldSetPanResponder: () => !isFinished,
       onMoveShouldSetPanResponder: () => !isFinished,
@@ -266,7 +284,7 @@ export default function SandboxScreen() {
         verifyTracingAccuracy(svgX, svgY);
 
         if (phoneticPlayerRef.current) {
-          try { phoneticPlayerRef.current.play(); } catch (e) {}
+          try { phoneticPlayerRef.current.play(); } catch {}
         }
       },
 
@@ -286,7 +304,7 @@ export default function SandboxScreen() {
 
       onPanResponderRelease: () => {
         if (phoneticPlayerRef.current) {
-          try { phoneticPlayerRef.current.pause(); } catch (e) {}
+          try { phoneticPlayerRef.current.pause(); } catch {}
         }
 
         if (isFinished) return;
@@ -306,14 +324,14 @@ export default function SandboxScreen() {
           setIsOnPath(true);
           
           if (phoneticPlayerRef.current) {
-            try { phoneticPlayerRef.current.pause(); } catch (e) {}
+            try { phoneticPlayerRef.current.pause(); } catch {}
           }
 
           if (successPlayerRef.current) {
             try {
               successPlayerRef.current.seekTo(0);
               successPlayerRef.current.play();
-            } catch (e) {}
+            } catch {}
           }
           
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -324,19 +342,7 @@ export default function SandboxScreen() {
         }
       },
     })
-  ).current;
-
-  const handleReset = () => {
-    setPaths([]);
-    setIsOnPath(true);
-    setIsFinished(false);
-    setIsAnimalFed(false);
-    hitPoints.current = [];
-    totalMoves.current = 0;
-    errorMoves.current = 0;
-    fadeAnim.setValue(0);
-    setAccuracy(100);
-  };
+  );
 
   return (
     <SafeAreaProvider>
@@ -415,7 +421,7 @@ export default function SandboxScreen() {
                       try {
                         crunchPlayerRef.current.seekTo(0);
                         crunchPlayerRef.current.play();
-                      } catch(e){}
+                      } catch {}
                     }
                   }}
                 >

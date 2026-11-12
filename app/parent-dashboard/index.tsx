@@ -44,23 +44,30 @@ export default function ParentsDashboardScreen() {
   const [savedProgress, setSavedProgress] = useState<ChildProgressReport | null>(null);
 
   useEffect(() => {
-    loadLocalParentData();
-  }, []);
+    let cancelled = false;
 
-  const loadLocalParentData = async () => {
-    try {
-      const activeProfile = await AsyncStorage.getItem('@parent_active_child');
-      if (activeProfile) {
-        setSavedProgress(JSON.parse(activeProfile));
-      } else {
-        setIsScanning(true);
+    const loadLocalParentData = async () => {
+      try {
+        const activeProfile = await AsyncStorage.getItem('@parent_active_child');
+        if (cancelled) return;
+        if (activeProfile) {
+          setSavedProgress(JSON.parse(activeProfile));
+        } else {
+          setIsScanning(true);
+        }
+      } catch {
+        console.error("Failed to load local storage data.");
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-    } catch (e) {
-      console.error("Failed to load local storage data.");
-    } finally {
-      setLoading(false);
-    }
-  };
+    };
+
+    loadLocalParentData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const processQRData = async (rawData: string) => {
     try {
@@ -91,6 +98,7 @@ export default function ParentsDashboardScreen() {
 
       Alert.alert("Synchronization Successful 🎉", `Loaded the progress report for ${fullReport.nickname}.`);
     } catch (error) {
+      console.warn("QR decode failed:", error);
       Alert.alert("QR Code Error", "Unable to decode the QR code data. Please ensure it originates from the Teacher Application.");
     }
   };
@@ -148,7 +156,7 @@ export default function ParentsDashboardScreen() {
           let rawImageData;
           try {
             rawImageData = decodeJpeg(byteArray, { useTArray: true });
-          } catch (jpegErr) {
+          } catch {
             Alert.alert(
               "Format Not Supported",
               "Please select a standard JPG/JPEG photo of the QR code, or scan it directly using the camera."
@@ -267,7 +275,7 @@ export default function ParentsDashboardScreen() {
             <View style={styles.scanNoticeCard}>
               <Text style={styles.scanNoticeTitle}>🔑 Parent Portal Access Gate</Text>
               <Text style={styles.scanNoticeSub}>
-                Scan the QR Code on the Teacher's device or upload a QR image from the gallery to sync the full progress report.
+                Scan the QR Code on the Teacher&apos;s device or upload a QR image from the gallery to sync the full progress report.
               </Text>
               <TouchableOpacity style={styles.overlayUploadBtn} onPress={handleUploadQRImage}>
                 <Ionicons name="image-outline" size={18} color="white" />

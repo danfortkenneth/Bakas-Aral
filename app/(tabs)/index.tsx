@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { 
   StyleSheet, 
   Text, 
@@ -37,16 +37,65 @@ export default function DashboardScreen() {
   const [activeStudentId, setActiveStudentId] = useState<string | null>(null);
   const [overallAccuracy, setOverallAccuracy] = useState<number>(0);
   const [timeSpent, setTimeSpent] = useState<string>('0m');
-  const [loadingStats, setLoadingStats] = useState(true);
+  const [loadingStats, setLoadingStats] = useState(() => auth.currentUser !== null);
   const [charStats, setCharStats] = useState<CharacterStats>({});
 
   const letters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
   const numbers = ['1', '2', '3'];
 
+  const listenToRealtimeStats = useCallback((studentId: string) => {
+    const q = query(collection(db, "sessions"), where("userId", "==", studentId));
+    return onSnapshot(q, (querySnapshot) => {
+      let globalTotalAcc = 0;
+      let globalCount = 0;
+      const tempCharStats: CharacterStats = {};
+
+      querySnapshot.forEach((doc) => {
+        const data = doc.data();
+        const char = data.letterOrNumber;
+        const acc = data.accuracy;
+
+        if (char && typeof acc === 'number') {
+          globalTotalAcc += acc;
+          globalCount++;
+
+          if (!tempCharStats[char]) {
+            tempCharStats[char] = { totalAcc: acc, count: 1 } as any;
+          } else {
+            (tempCharStats[char] as any).totalAcc += acc;
+            tempCharStats[char].count += 1;
+          }
+        }
+      });
+
+      const finalizedStats: CharacterStats = {};
+      Object.keys(tempCharStats).forEach((key) => {
+        const item = tempCharStats[key] as any;
+        finalizedStats[key] = {
+          accuracy: Math.round(item.totalAcc / item.count),
+          count: item.count
+        };
+      });
+
+      setCharStats(finalizedStats);
+      setOverallAccuracy(globalCount > 0 ? Math.round(globalTotalAcc / globalCount) : 100);
+      
+      const calculatedMinutes = globalCount * 3; 
+      if (calculatedMinutes >= 60) {
+        setTimeSpent(`${Math.floor(calculatedMinutes / 60)}h ${calculatedMinutes % 60}m`);
+      } else {
+        setTimeSpent(`${calculatedMinutes}m`);
+      }
+      setLoadingStats(false);
+    }, (error) => {
+      console.error(error);
+      setLoadingStats(false);
+    });
+  }, []);
+
   useEffect(() => {
     const currentUser = auth.currentUser;
     if (!currentUser) {
-      setLoadingStats(false);
       return;
     }
 
@@ -105,57 +154,7 @@ export default function DashboardScreen() {
       if (unsubscribeTeacher) unsubscribeTeacher();
       if (unsubscribeSessions) unsubscribeSessions();
     };
-  }, [lang]);
-
-  const listenToRealtimeStats = (studentId: string) => {
-    const q = query(collection(db, "sessions"), where("userId", "==", studentId));
-    return onSnapshot(q, (querySnapshot) => {
-      let globalTotalAcc = 0;
-      let globalCount = 0;
-      const tempCharStats: CharacterStats = {};
-
-      querySnapshot.forEach((doc) => {
-        const data = doc.data();
-        const char = data.letterOrNumber;
-        const acc = data.accuracy;
-
-        if (char && typeof acc === 'number') {
-          globalTotalAcc += acc;
-          globalCount++;
-
-          if (!tempCharStats[char]) {
-            tempCharStats[char] = { totalAcc: acc, count: 1 } as any;
-          } else {
-            (tempCharStats[char] as any).totalAcc += acc;
-            tempCharStats[char].count += 1;
-          }
-        }
-      });
-
-      const finalizedStats: CharacterStats = {};
-      Object.keys(tempCharStats).forEach((key) => {
-        const item = tempCharStats[key] as any;
-        finalizedStats[key] = {
-          accuracy: Math.round(item.totalAcc / item.count),
-          count: item.count
-        };
-      });
-
-      setCharStats(finalizedStats);
-      setOverallAccuracy(globalCount > 0 ? Math.round(globalTotalAcc / globalCount) : 100);
-      
-      const calculatedMinutes = globalCount * 3; 
-      if (calculatedMinutes >= 60) {
-        setTimeSpent(`${Math.floor(calculatedMinutes / 60)}h ${calculatedMinutes % 60}m`);
-      } else {
-        setTimeSpent(`${calculatedMinutes}m`);
-      }
-      setLoadingStats(false);
-    }, (error) => {
-      console.error(error);
-      setLoadingStats(false);
-    });
-  };
+  }, [lang, router, listenToRealtimeStats]);
 
   const startTracing = (char: string) => {
     if (!activeStudentId) {

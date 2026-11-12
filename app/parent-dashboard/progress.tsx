@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, Text, View, ScrollView, SafeAreaView, Dimensions, PixelRatio, ActivityIndicator } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useLanguage } from '../_layout';
@@ -19,11 +19,20 @@ interface DayActivity {
   count: number;
 }
 
+const AVAILABLE_ITEMS = [
+  'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
+  'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
+  '1', '2', '3', '4', '5', '6', '7', '8', '9', '0'
+];
+
 export default function ProgressScreen() {
   const { lang } = useLanguage();
-  const dayNames = lang === 'ph' 
-    ? ['Lin', 'Lun', 'Mar', 'Miy', 'Huw', 'Biy', 'Sab'] 
-    : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const dayNames = useMemo(
+    () => lang === 'ph'
+      ? ['Lin', 'Lun', 'Mar', 'Miy', 'Huw', 'Biy', 'Sab']
+      : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
+    [lang]
+  );
 
   const [activeStudentId, setActiveStudentId] = useState<string | null>(null);
   const [activeStudentName, setActiveStudentName] = useState<string>('---');
@@ -35,15 +44,86 @@ export default function ProgressScreen() {
   const [loading, setLoading] = useState(true);
   const [charStats, setCharStats] = useState<CharacterStats>({});
 
-  const availableItems = [
-    'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
-    'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
-    '1', '2', '3', '4', '5', '6', '7', '8', '9', '0'
-  ];
-
   useEffect(() => {
     let unsubscribeTeacher: () => void = () => {};
     let unsubscribeSessions: () => void = () => {};
+
+    const listenToStudentProgress = (studentId: string) => {
+      const sessionsQuery = query(collection(db, "sessions"), where("userId", "==", studentId));
+
+      return onSnapshot(sessionsQuery, (querySnapshot) => {
+        let totalAcc = 0;
+        let count = 0;
+        let stars = 0;
+        let durationSum = 0;
+        const tempCharStats: CharacterStats = {};
+        const dayCounts: { [key: number]: number } = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 };
+
+        querySnapshot.forEach((docSnap) => {
+          const data = docSnap.data();
+          const char = data.letterOrNumber;
+          const acc = data.accuracy;
+          const dur = data.durationSeconds || data.duration || 0;
+          const timestamp = data.createdAt?.toDate ? data.createdAt.toDate() : new Date();
+
+          if (typeof acc === 'number') {
+            totalAcc += acc;
+            count++;
+            
+            // Bituin / Stars computation
+            if (acc >= 85) stars += 3;
+            else if (acc >= 70) stars += 2;
+            else if (acc >= 50) stars += 1;
+
+            // Duration accumulation (in seconds)
+            if (typeof dur === 'number') {
+              durationSum += dur;
+            } else if (typeof dur === 'string') {
+              const parsedDur = parseInt(dur.replace(/[^0-9]/g, ''), 10);
+              if (!isNaN(parsedDur)) durationSum += parsedDur;
+            }
+
+            // Day of week
+            const dayOfWeek = timestamp.getDay();
+            dayCounts[dayOfWeek] = (dayCounts[dayOfWeek] || 0) + 1;
+
+            if (char) {
+              if (!tempCharStats[char]) {
+                tempCharStats[char] = { totalAcc: acc, count: 1 } as any;
+              } else {
+                (tempCharStats[char] as any).totalAcc += acc;
+                tempCharStats[char].count += 1;
+              }
+            }
+          }
+        });
+
+        const finalizedStats: CharacterStats = {};
+        Object.keys(tempCharStats).forEach((key) => {
+          const item = tempCharStats[key] as any;
+          finalizedStats[key] = {
+            accuracy: Math.round(item.totalAcc / item.count),
+            count: item.count
+          };
+        });
+
+        const formattedWeekly: DayActivity[] = dayNames.map((name, index) => ({
+          dayLabel: name,
+          count: dayCounts[index] || 0
+        }));
+
+        setWeeklyData(formattedWeekly);
+        setCharStats(finalizedStats);
+        setAvgAccuracy(count > 0 ? Math.round(totalAcc / count) : 0);
+        setTotalSessions(count);
+        setTotalStars(stars);
+        setTotalDurationSeconds(durationSum);
+        setLoading(false);
+      }, (error) => {
+        console.warn("Student progress error:", error.message);
+        setLoading(false);
+      });
+    };
 
     const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
       if (!currentUser) {
@@ -96,84 +176,7 @@ export default function ProgressScreen() {
       unsubscribeTeacher();
       unsubscribeSessions();
     };
-  }, [lang]);
-
-  const listenToStudentProgress = (studentId: string) => {
-    const sessionsQuery = query(collection(db, "sessions"), where("userId", "==", studentId));
-
-    return onSnapshot(sessionsQuery, (querySnapshot) => {
-      let totalAcc = 0;
-      let count = 0;
-      let stars = 0;
-      let durationSum = 0;
-      const tempCharStats: CharacterStats = {};
-      const dayCounts: { [key: number]: number } = { 0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0 };
-
-      querySnapshot.forEach((docSnap) => {
-        const data = docSnap.data();
-        const char = data.letterOrNumber;
-        const acc = data.accuracy;
-        const dur = data.durationSeconds || data.duration || 0;
-        const timestamp = data.createdAt?.toDate ? data.createdAt.toDate() : new Date();
-
-        if (typeof acc === 'number') {
-          totalAcc += acc;
-          count++;
-          
-          // Bituin / Stars computation
-          if (acc >= 85) stars += 3;
-          else if (acc >= 70) stars += 2;
-          else if (acc >= 50) stars += 1;
-
-          // Duration accumulation (in seconds)
-          if (typeof dur === 'number') {
-            durationSum += dur;
-          } else if (typeof dur === 'string') {
-            const parsedDur = parseInt(dur.replace(/[^0-9]/g, ''), 10);
-            if (!isNaN(parsedDur)) durationSum += parsedDur;
-          }
-
-          // Day of week
-          const dayOfWeek = timestamp.getDay();
-          dayCounts[dayOfWeek] = (dayCounts[dayOfWeek] || 0) + 1;
-
-          if (char) {
-            if (!tempCharStats[char]) {
-              tempCharStats[char] = { totalAcc: acc, count: 1 } as any;
-            } else {
-              (tempCharStats[char] as any).totalAcc += acc;
-              tempCharStats[char].count += 1;
-            }
-          }
-        }
-      });
-
-      const finalizedStats: CharacterStats = {};
-      Object.keys(tempCharStats).forEach((key) => {
-        const item = tempCharStats[key] as any;
-        finalizedStats[key] = {
-          accuracy: Math.round(item.totalAcc / item.count),
-          count: item.count
-        };
-      });
-
-      const formattedWeekly: DayActivity[] = dayNames.map((name, index) => ({
-        dayLabel: name,
-        count: dayCounts[index] || 0
-      }));
-
-      setWeeklyData(formattedWeekly);
-      setCharStats(finalizedStats);
-      setAvgAccuracy(count > 0 ? Math.round(totalAcc / count) : 0);
-      setTotalSessions(count);
-      setTotalStars(stars);
-      setTotalDurationSeconds(durationSum);
-      setLoading(false);
-    }, (error) => {
-      console.warn("Student progress error:", error.message);
-      setLoading(false);
-    });
-  };
+  }, [lang, dayNames]);
 
   // Helper para i-format ang segundo sa mins o hrs
   const formatDuration = (seconds: number) => {
@@ -287,7 +290,7 @@ export default function ProgressScreen() {
           ) : !activeStudentId ? (
             <Text style={styles.emptyText}>{lang === 'ph' ? 'Pumili muna ng mag-aaral.' : 'Please select a student first.'}</Text>
           ) : (
-            availableItems.map((item) => {
+            AVAILABLE_ITEMS.map((item) => {
               const stat = charStats[item];
               const hasPlayed = !!(stat && stat.count > 0);
               const accuracy = hasPlayed ? stat.accuracy : 0;

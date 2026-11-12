@@ -14,7 +14,6 @@ import {
   ActivityIndicator
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { useLanguage } from '../_layout'; 
 
 import { auth, db } from '../../lib/firebase'; 
 import { createUserWithEmailAndPassword, updateProfile, signOut } from 'firebase/auth';
@@ -29,7 +28,6 @@ const scaleFont = (size: number) => {
 
 export default function Signup() {
   const router = useRouter();
-  const { lang } = useLanguage();
   const { role } = useLocalSearchParams(); 
 
   const currentRole = (role as string) || 'teacher';
