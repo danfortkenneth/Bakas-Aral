@@ -1,50 +1,124 @@
-# Welcome to your Expo app 👋
+# Bakas-Aral (NEU-Bakás)
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+A multi-sensory Filipino literacy app for **pre-kindergarten** learners. Children trace Filipino letters while getting haptic feedback, phonetic audio, and anchor words — and teachers/parents can track their progress.
 
-## Get started
+Built with **Expo + React Native** and **Firebase**.
 
-1. Install dependencies
+---
 
-   ```bash
-   npm install
-   ```
+## Features
 
-2. Start the app
+| Area | Description |
+|---|---|
+| **Bakás (Tracing)** | Letter/number tracing game with haptic + audio feedback |
+| **Progress** | Accuracy and activity tracking per student |
+| **Teacher Dashboard** | Manage classes, view student accuracy, generate QR codes |
+| **Parent Dashboard** | Monitor a child's progress, sticker book, sandbox |
+| **QR Scanning** | Parents scan a teacher-issued QR to link a student |
+| **Admin Dashboard** | Account and system management |
+| **Bilingual UI** | English / Filipino toggle |
 
-   ```bash
-   npx expo start
-   ```
+## Tech Stack
 
-In the output, you'll find options to open the app in a
+- **Expo SDK 58** · React Native 0.88 · React 19 (New Architecture)
+- **Expo Router** (file-based routing, typed routes)
+- **TypeScript**
+- **Firebase** — Auth + Firestore + Storage (web SDK)
+- `expo-audio`, `expo-camera`, `expo-image-picker`, `expo-haptics`, `react-native-svg`, `react-native-qrcode-svg`
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+## Requirements
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+- Node.js 20+
+- npm
+- [Expo Go](https://expo.dev/go) or a development build
+- Android Studio (optional, for `expo run:android`)
 
-## Get a fresh project
-
-When you're ready, run:
+## Getting Started
 
 ```bash
-npm run reset-project
+# 1. Install dependencies
+npm install
+
+# 2. Add environment variables (see below)
+#    Create a .env file in the project root
+
+# 3. Start the dev server
+npx expo start
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+Then press `a` for Android, `w` for web, or scan the QR with Expo Go.
 
-## Learn more
+### Environment Variables
 
-To learn more about developing your project with Expo, look at the following resources:
+Create `.env` in the project root. This file is **git-ignored** — never commit it.
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+```env
+EXPO_PUBLIC_FIREBASE_API_KEY=...
+EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN=...
+EXPO_PUBLIC_FIREBASE_PROJECT_ID=...
+EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET=...
+EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=...
+EXPO_PUBLIC_FIREBASE_APP_ID=...
+EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID=...
+```
 
-## Join the community
+Get these from **Firebase Console → Project Settings → Your apps**.
 
-Join our community of developers creating universal apps.
+## Scripts
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+| Command | What it does |
+|---|---|
+| `npm start` | Start the Expo dev server |
+| `npm run android` | Build & run on Android (`expo run:android`) |
+| `npm run ios` | Build & run on iOS (macOS only) |
+| `npm run web` | Run in the browser |
+| `npm run lint` | ESLint via `expo lint` |
+
+## Project Structure
+
+```
+app/                     # Expo Router routes
+  _layout.tsx            # Root layout: auth, language & user contexts
+  index.tsx              # Welcome screen
+  (auth)/                # Role selection, login, signup
+  (tabs)/                # Home, Bakás, Progress, Teacher, Admin
+  parent-dashboard/      # Parent home, progress, QR scanner, sticker book, sandbox
+components/              # Shared UI components
+constants/               # Theme, avatars, traceable characters
+hooks/                   # Theme / color-scheme hooks
+lib/                     # Firebase init, classroom & parent sync helpers
+services/                # Data services
+```
+
+## Roles
+
+- **Parent / Magulang** — monitor a child's progress and activities
+- **Teacher / Guro** — manage classes and track each child's accuracy
+- **System Admin** — manage system settings and accounts
+
+## Troubleshooting
+
+**Metro cache issues**
+
+```bash
+npx expo start --clear
+```
+
+**Dependency mismatch after upgrading Expo**
+
+```bash
+npx expo install --check
+npx expo-doctor
+```
+
+**Type check / lint**
+
+```bash
+npx tsc --noEmit
+npm run lint
+```
+
+## Notes
+
+- `android/` and `ios/` are generated native folders and are git-ignored. Run `npx expo prebuild` if you need to regenerate them.
+- The app uses the **Firebase JS SDK** (`firebase/*`). The native `@react-native-firebase/*` packages are intentionally not used.

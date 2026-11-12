@@ -8,12 +8,9 @@
     "scheme": "neubakas",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "supportsTablet": true,
-      "newArchEnabled": true
+      "supportsTablet": true
     },
     "android": {
-      "enableProguardInReleaseBuilds": false,
-      "newArchEnabled": true,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png"
@@ -71,7 +68,6 @@
         }
       ],
       "expo-asset",
-      "expo-av",
       "expo-audio",
       "expo-sharing"
     ],
