@@ -90,6 +90,51 @@ lib/                     # Firebase init, classroom & parent sync helpers
 services/                # Data services
 ```
 
+## Tracing characters
+
+All 36 characters (A–Z and 0–9) live in `constants/traceableData.ts` as stroke
+definitions. `buildCharacter()` smooths each stroke (Catmull-Rom) and derives the
+SVG `path`, the hit `points` spread by arc length, and the `segments` used for
+"is the finger on the stroke?" checks — all inside the 400×600 viewBox used by the
+tracing screens.
+
+`constants/characterLibrary.ts` layers the optional assets on top (anchor word,
+image, sounds). Only **A** and **B** currently ship with artwork/audio; every other
+character falls back to a text badge and silence.
+
+To add artwork or audio for another character, drop the files in `assets/` and add
+an entry to `CHARACTER_ASSETS` — no screen changes needed.
+
+### Completion and reward
+
+A character only finishes when the learner has actually traced it:
+
+- **every** guide dot must be reached,
+- at least 70% of the guide line actually traced,
+- at least 8 move samples (a single tap can never finish).
+
+To keep that fair for a real child's hand, the **first and last dot of each
+stroke** use a wider radius (`ENDPOINT_TOLERANCE = 90`) than the interior dots
+(`TRACE_TOLERANCE = 55`) — starting or stopping a little off the mark still
+counts. `lib/tracing.ts` holds these rules plus `fitTracingCanvas()`, which keeps
+the drawing area at the character's 2:3 aspect ratio so touch coordinates map
+1:1 to the 400×600 viewBox.
+
+**Undo** removes the last stroke and replays the remaining strokes through
+`analyseStrokes()`, so the dots, coverage and accuracy always match what is on
+screen. A child can fix a wrong stroke without starting over.
+
+**Haptics are a core feature**, not decoration:
+
+- a `Medium` impact every time a guide dot is reached,
+- a light `selectionAsync()` tick roughly every 38 viewBox units while the finger
+  stays on the line, so the stroke can be felt under the finger,
+- a throttled `Warning` buzz (max ~3/second) when the finger leaves the line.
+
+Finishing a character unlocks the **sticker card** for that anchor word. The
+card waits ~400 ms, then fades/springs in while the stars pop one by one, and it
+stays non-interactive until it is visible.
+
 ## Roles
 
 - **Parent / Magulang** — monitor a child's progress and activities

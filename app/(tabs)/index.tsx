@@ -14,6 +14,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useLanguage } from '../_layout'; 
+import { LETTERS, NUMBERS } from '../../constants/characterLibrary';
 import { db, auth } from '../../lib/firebase';
 import { doc, onSnapshot, query, collection, where, getDoc } from 'firebase/firestore';
 
@@ -40,8 +41,8 @@ export default function DashboardScreen() {
   const [loadingStats, setLoadingStats] = useState(() => auth.currentUser !== null);
   const [charStats, setCharStats] = useState<CharacterStats>({});
 
-  const letters = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
-  const numbers = ['1', '2', '3'];
+  const letters = LETTERS;
+  const numbers = NUMBERS;
 
   const listenToRealtimeStats = useCallback((studentId: string) => {
     const q = query(collection(db, "sessions"), where("userId", "==", studentId));

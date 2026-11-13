@@ -19,58 +19,29 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView, SafeAreaProvider } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useLanguage } from '../_layout';
+import { getCharacter } from '../../constants/characterLibrary';
+import {
+  ENDPOINT_TOLERANCE,
+  MIN_MOVES,
+  REQUIRED_COVERAGE,
+  TRACE_TOLERANCE,
+  analyseStrokes,
+  dotTolerance,
+  fitTracingCanvas,
+  markCoveredSegments,
+  requiredHits,
+} from '../../lib/tracing';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const scale = SCREEN_WIDTH / 375;
 const normalize = (size: number) => Math.round(PixelRatio.roundToNearestPixel(size * scale));
 const isTablet = SCREEN_WIDTH > 550;
 
-const CANVAS_WIDTH = SCREEN_WIDTH * 0.9;
-const CANVAS_HEIGHT = SCREEN_HEIGHT * 0.55;
-
-const CHAR_LIBRARY: any = {
-  'A': {
-    word: 'Atis',
-    image: require('../../assets/images/Atis.png'), 
-    phoneticSound: require('../../assets/sounds/Atis.mp3'), 
-    wordSound: require('../../assets/sounds/Atis_suc.mp3'),     
-    path: "M200,100 L100,450 M200,100 L300,450 M145,320 L255,320",
-    points: [
-      { id: 1, x: 200, y: 100 }, 
-      { id: 2, x: 150, y: 275 }, 
-      { id: 3, x: 100, y: 450 }, 
-      { id: 4, x: 300, y: 450 }, 
-      { id: 5, x: 200, y: 320 }
-    ],
-    segments: [
-      { x1: 200, y1: 100, x2: 100, y2: 450 },
-      { x1: 200, y1: 100, x2: 300, y2: 450 },
-      { x1: 145, y1: 320, x2: 255, y2: 320 }
-    ]
-  },
-  'B': {
-    word: 'Bahay', 
-    image: require('../../assets/images/Bahay.png'), 
-    phoneticSound: require('../../assets/sounds/Bahay.mp3'), 
-    wordSound: require('../../assets/sounds/Bahay_suc.mp3'),         
-    path: "M150,100 L150,500 M150,100 C270,100 270,300 150,300 C270,300 270,500 150,500",
-    points: [
-      { id: 1, x: 150, y: 100 }, 
-      { id: 2, x: 150, y: 300 }, 
-      { id: 3, x: 150, y: 500 }, 
-      { id: 4, x: 230, y: 200 }, 
-      { id: 5, x: 240, y: 400 }, 
-    ],
-    segments: [
-      { x1: 150, y1: 100, x2: 150, y2: 300 },
-      { x1: 150, y1: 300, x2: 150, y2: 500 },
-      { x1: 150, y1: 100, x2: 230, y2: 200 },
-      { x1: 230, y1: 200, x2: 150, y2: 300 },
-      { x1: 150, y1: 300, x2: 240, y2: 400 },
-      { x1: 240, y1: 400, x2: 150, y2: 500 }
-    ]
-  }
-};
+// Keep the drawing area at the character's 2:3 aspect ratio so touches map 1:1.
+const { width: CANVAS_WIDTH, height: CANVAS_HEIGHT } = fitTracingCanvas(
+  SCREEN_WIDTH * 0.9,
+  SCREEN_HEIGHT * 0.55
+);
 
 export default function SandboxScreen() {
   const router = useRouter();
@@ -81,7 +52,7 @@ export default function SandboxScreen() {
   const studentName = (params.studentName as string) || (params.nickname as string) || 'mae';
   const activeAvatar = ((params.activeAvatar as string) || (params.avatar as string) || 'tiger').toLowerCase();
   
-  const charData = CHAR_LIBRARY[selectedChar] || CHAR_LIBRARY['A'];
+  const charData = getCharacter(selectedChar);
 
   const [paths, setPaths] = useState<string[]>([]);
   const [isOnPath, setIsOnPath] = useState<boolean>(true);
@@ -89,54 +60,106 @@ export default function SandboxScreen() {
   const [saving, setSaving] = useState<boolean>(false);
   const [accuracy, setAccuracy] = useState<number>(100); 
   
-  const [isAnimalFed, setIsAnimalFed] = useState<boolean>(false);
   const [earnedStars, setEarnedStars] = useState<number>(3);
   
   const hitPoints = useRef<number[]>([]);
   const totalPointsCount = charData.points.length;
+  const hitsNeeded = requiredHits(totalPointsCount);
+  const [hitIds, setHitIds] = useState<number[]>([]);
   const [fadeAnim] = useState(() => new Animated.Value(0));
+  const [cardScale] = useState(() => new Animated.Value(0.86));
+  const [starAnims] = useState(() => [0, 1, 2].map(() => new Animated.Value(0)));
+  const [rewardReady, setRewardReady] = useState(false);
+  const rewardTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const totalMoves = useRef<number>(0);
   const errorMoves = useRef<number>(0);
+  const finishedRef = useRef<boolean>(false);
+  const coveredSegments = useRef<Set<number>>(new Set());
+  /** Raw points of every stroke drawn in this attempt — powers undo. */
+  const strokePoints = useRef<{ x: number; y: number }[][]>([]);
+
+  // Haptics: the tactile "texture" of the stroke is a core part of the game.
+  const lastHapticPoint = useRef<{ x: number; y: number } | null>(null);
+  const lastHapticTime = useRef<number>(0);
+  const lastWarnTime = useRef<number>(0);
 
   const phoneticPlayerRef = useRef<any>(null);
   const successPlayerRef = useRef<any>(null);
   const errorPlayerRef = useRef<any>(null);
-  const crunchPlayerRef = useRef<any>(null);
   const lastErrorSoundTime = useRef<number>(0);
+
+  /** Light tick every few centimetres so the child can feel the stroke. */
+  const pulseHaptic = (x: number, y: number) => {
+    const now = Date.now();
+    const last = lastHapticPoint.current;
+    const moved = last ? Math.hypot(x - last.x, y - last.y) : Number.POSITIVE_INFINITY;
+    if (moved < 38 || now - lastHapticTime.current < 45) return;
+    lastHapticPoint.current = { x, y };
+    lastHapticTime.current = now;
+    Haptics.selectionAsync();
+  };
+
+  /** Warn at most a few times per second so the phone does not buzz nonstop. */
+  const warnHaptic = () => {
+    const now = Date.now();
+    if (now - lastWarnTime.current < 350) return;
+    lastWarnTime.current = now;
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+  };
+
+  /** Recomputes dots/coverage/accuracy from the strokes still on screen. */
+  const rebuildProgress = () => {
+    const analysis = analyseStrokes(
+      strokePoints.current,
+      charData.points,
+      charData.segments,
+      TRACE_TOLERANCE,
+      ENDPOINT_TOLERANCE
+    );
+    hitPoints.current = analysis.hits;
+    coveredSegments.current = analysis.covered;
+    totalMoves.current = analysis.moves;
+    errorMoves.current = analysis.offPath;
+    setHitIds(analysis.hits);
+  };
 
   const handleReset = () => {
     setPaths([]);
     setIsOnPath(true);
     setIsFinished(false);
-    setIsAnimalFed(false);
     hitPoints.current = [];
+    setHitIds([]);
     totalMoves.current = 0;
     errorMoves.current = 0;
+    finishedRef.current = false;
+    coveredSegments.current.clear();
+    strokePoints.current = [];
+    lastHapticPoint.current = null;
+    lastHapticTime.current = 0;
+    lastWarnTime.current = 0;
     fadeAnim.setValue(0);
+    cardScale.setValue(0.86);
+    starAnims.forEach((anim) => anim.setValue(0));
+    if (rewardTimer.current) clearTimeout(rewardTimer.current);
+    rewardTimer.current = null;
+    setRewardReady(false);
     setAccuracy(100);
+  };
+
+  /** Removes the last stroke and rebuilds the progress from what remains. */
+  const handleUndo = () => {
+    if (finishedRef.current || strokePoints.current.length === 0) return;
+    strokePoints.current.pop();
+    setPaths((prev) => prev.slice(0, -1));
+    rebuildProgress();
+    lastHapticPoint.current = null;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
   const handleExitOrContinue = () => {
     router.replace('/parent-dashboard' as any);
   };
-
-  const getAvatarMeta = (avatarKey: string) => {
-    switch (avatarKey) {
-      case 'tiger': return { emoji: '🐯', name: 'Tigre', food: '🥩' };
-      case 'lion': return { emoji: '🦁', name: 'Leon', food: '🥩' };
-      case 'bear': return { emoji: '🐻', name: 'Oso', food: '🐟' };
-      case 'rabbit': return { emoji: '🐰', name: 'Kuneho', food: '🥕' };
-      case 'panda': return { emoji: '🐼', name: 'Panda', food: '🎋' };
-      case 'fox': return { emoji: '🦊', name: 'Foks', food: '🍗' };
-      case 'monkey': return { emoji: '🐵', name: 'Matsing', food: '🍌' };
-      case 'cat': return { emoji: '🐱', name: 'Pusa', food: '🐟' };
-      case 'dog': return { emoji: '🐶', name: 'Aso', food: '🦴' };
-      default: return { emoji: '👶', name: 'Bata', food: '🍎' };
-    }
-  };
-
-  const currentAvatarMeta = getAvatarMeta(activeAvatar);
 
   useEffect(() => {
     try {
@@ -149,13 +172,16 @@ export default function SandboxScreen() {
         successPlayerRef.current = null;
       }
 
-      const pPlayer = createAudioPlayer(charData.phoneticSound);
-      pPlayer.loop = true;
-      pPlayer.volume = 0.7;
-      phoneticPlayerRef.current = pPlayer;
+      if (charData.phoneticSound) {
+        const pPlayer = createAudioPlayer(charData.phoneticSound);
+        pPlayer.loop = true;
+        pPlayer.volume = 0.7;
+        phoneticPlayerRef.current = pPlayer;
+      }
 
-      const wPlayer = createAudioPlayer(charData.wordSound);
-      successPlayerRef.current = wPlayer;
+      if (charData.wordSound) {
+        successPlayerRef.current = createAudioPlayer(charData.wordSound);
+      }
     } catch (e) {
       console.log("Error initializing character audio players:", e);
     }
@@ -177,7 +203,6 @@ export default function SandboxScreen() {
   useEffect(() => {
     try {
       errorPlayerRef.current = createAudioPlayer(require('../../assets/sounds/error.mp3'));
-      crunchPlayerRef.current = createAudioPlayer(require('../../assets/sounds/error.mp3'));
     } catch (e) {
       console.log("Error initializing static audio players:", e);
     }
@@ -185,8 +210,14 @@ export default function SandboxScreen() {
     return () => {
       try {
         if (errorPlayerRef.current) errorPlayerRef.current.remove();
-        if (crunchPlayerRef.current) crunchPlayerRef.current.remove();
       } catch {}
+    };
+  }, []);
+
+  // Clear any pending reward timer if the screen closes mid-reveal.
+  useEffect(() => {
+    return () => {
+      if (rewardTimer.current) clearTimeout(rewardTimer.current);
     };
   }, []);
 
@@ -214,74 +245,162 @@ export default function SandboxScreen() {
     }
   };
 
-  const getDistanceToSegment = (x: number, y: number, x1: number, y1: number, x2: number, y2: number) => {
-    const A = x - x1; const B = y - y1; const C = x2 - x1; const D = y2 - y1;
-    const dot = A * C + B * D; const lenSq = C * C + D * D;
-    let param = -1; if (lenSq !== 0) param = dot / lenSq;
-    let xx, yy;
-    if (param < 0) { xx = x1; yy = y1; }
-    else if (param > 1) { xx = x2; yy = y2; }
-    else { xx = x1 + param * C; yy = y1 + param * D; }
-    return Math.sqrt((x - xx) * (x - xx) + (y - yy) * (y - yy));
+  /**
+   * Forgiving completion: most guide dots reached, most of the line traced,
+   * and real movement (not a single tap). Runs on every touch and on release.
+   */
+  const tryFinish = () => {
+    if (finishedRef.current) return;
+
+    const dotsHit = new Set(hitPoints.current).size;
+    const totalSegments = charData.segments.length;
+    const coverage = totalSegments > 0 ? coveredSegments.current.size / totalSegments : 0;
+    if (
+      dotsHit < hitsNeeded ||
+      coverage < REQUIRED_COVERAGE ||
+      totalMoves.current < MIN_MOVES
+    ) {
+      return;
+    }
+
+    finishedRef.current = true;
+
+    const calculatedScore = Math.max(50, Math.round(((totalMoves.current - errorMoves.current) / totalMoves.current) * 100));
+
+    let stars = 1;
+    if (calculatedScore >= 90) stars = 3;
+    else if (calculatedScore >= 75) stars = 2;
+
+    setAccuracy(calculatedScore);
+    setEarnedStars(stars);
+    setIsFinished(true);
+    setIsOnPath(true);
+
+    if (phoneticPlayerRef.current) {
+      try { phoneticPlayerRef.current.pause(); } catch {}
+    }
+
+    if (successPlayerRef.current) {
+      try {
+        successPlayerRef.current.seekTo(0);
+        successPlayerRef.current.play();
+      } catch {}
+    }
+
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    saveLocalHomePractice(calculatedScore);
+
+    // Reward reveal: a short pause lets the finished letter register first,
+    // then the card eases in and the stars pop one by one.
+    fadeAnim.setValue(0);
+    cardScale.setValue(0.86);
+    starAnims.forEach((anim) => anim.setValue(0));
+
+    // Keep the card non-interactive until it is actually visible.
+    setRewardReady(false);
+    if (rewardTimer.current) clearTimeout(rewardTimer.current);
+    rewardTimer.current = setTimeout(() => setRewardReady(true), 400);
+
+    Animated.parallel([
+      Animated.sequence([
+        Animated.delay(400),
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 320,
+          useNativeDriver: true,
+        }),
+      ]),
+      Animated.sequence([
+        Animated.delay(400),
+        Animated.spring(cardScale, {
+          toValue: 1,
+          friction: 6,
+          tension: 70,
+          useNativeDriver: true,
+        }),
+      ]),
+      ...starAnims.map((anim, index) =>
+        Animated.sequence([
+          Animated.delay(760 + index * 140),
+          Animated.spring(anim, {
+            toValue: 1,
+            friction: 5,
+            tension: 110,
+            useNativeDriver: true,
+          }),
+        ])
+      ),
+    ]).start();
   };
 
-  const verifyTracingAccuracy = (x: number, y: number) => {
+  const registerTouch = (x: number, y: number) => {
+    if (finishedRef.current) return;
     totalMoves.current += 1;
 
+    // 1. Mark every guide dot the finger reached. Endpoint dots are more
+    // forgiving, so a child who starts slightly off still gets credit.
+    let gainedDot = false;
     charData.points.forEach((point: any) => {
-      const distance = Math.sqrt(Math.pow(x - point.x, 2) + Math.pow(y - point.y, 2));
-      const targetRadius = selectedChar === 'B' ? 45 : 40;
-      if (distance < targetRadius) { 
-        if (!hitPoints.current.includes(point.id)) {
-          hitPoints.current.push(point.id);
-        }
+      if (hitPoints.current.includes(point.id)) return;
+      if (Math.hypot(x - point.x, y - point.y) <= dotTolerance(point)) {
+        hitPoints.current.push(point.id);
+        gainedDot = true;
       }
     });
-
-    let minDistanceToLetter = 999;
-    if (charData.segments) {
-      charData.segments.forEach((seg: any) => {
-        const dist = getDistanceToSegment(x, y, seg.x1, seg.y1, seg.x2, seg.y2);
-        if (dist < minDistanceToLetter) minDistanceToLetter = dist;
-      });
+    if (gainedDot) {
+      setHitIds([...hitPoints.current]);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
 
-    const pathAllowance = selectedChar === 'B' ? 50 : 45;
-    if (minDistanceToLetter > pathAllowance) {
+    // 2. Track coverage + check the finger is still inside the writing lane.
+    const distance = markCoveredSegments(
+      x,
+      y,
+      charData.segments,
+      TRACE_TOLERANCE,
+      coveredSegments.current
+    );
+
+    if (distance <= TRACE_TOLERANCE) {
+      setIsOnPath(true);
+      // Continuous light ticks let the child feel the stroke under their finger.
+      pulseHaptic(x, y);
+    } else {
       setIsOnPath(false);
       errorMoves.current += 1;
-      
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      warnHaptic();
 
       const now = Date.now();
-      if (now - lastErrorSoundTime.current > 1200) {
-        if (errorPlayerRef.current) {
-          lastErrorSoundTime.current = now;
-          try {
-            errorPlayerRef.current.seekTo(0);
-            errorPlayerRef.current.play();
-          } catch {}
-        }
+      if (now - lastErrorSoundTime.current > 1200 && errorPlayerRef.current) {
+        lastErrorSoundTime.current = now;
+        try {
+          errorPlayerRef.current.seekTo(0);
+          errorPlayerRef.current.play();
+        } catch {}
       }
-    } else {
-      setIsOnPath(true);
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     }
+
+    // 3. Reward as soon as the shape is done — no need to lift the finger first.
+    tryFinish();
   };
 
   // PanResponder callbacks run in gesture handlers, not during render; refs are safe here.
   // eslint-disable-next-line react-hooks/refs
   const [panResponder] = useState(() =>
     PanResponder.create({
-      onStartShouldSetPanResponder: () => !isFinished,
-      onMoveShouldSetPanResponder: () => !isFinished,
+      onStartShouldSetPanResponder: () => !finishedRef.current,
+      onMoveShouldSetPanResponder: () => !finishedRef.current,
       
       onPanResponderGrant: (evt) => {
+        if (finishedRef.current) return;
         const { locationX, locationY } = evt.nativeEvent;
         const svgX = (locationX / CANVAS_WIDTH) * 400;
         const svgY = (locationY / CANVAS_HEIGHT) * 600;
+        strokePoints.current.push([{ x: svgX, y: svgY }]);
+        lastHapticPoint.current = { x: svgX, y: svgY };
+        lastHapticTime.current = Date.now();
         setPaths((prev) => [...prev, `M${svgX.toFixed(1)},${svgY.toFixed(1)}`]);
-        verifyTracingAccuracy(svgX, svgY);
+        registerTouch(svgX, svgY);
 
         if (phoneticPlayerRef.current) {
           try { phoneticPlayerRef.current.play(); } catch {}
@@ -289,9 +408,13 @@ export default function SandboxScreen() {
       },
 
       onPanResponderMove: (evt) => {
+        if (finishedRef.current) return;
         const { locationX, locationY } = evt.nativeEvent;
         const svgX = (locationX / CANVAS_WIDTH) * 400;
         const svgY = (locationY / CANVAS_HEIGHT) * 600;
+
+        const currentStroke = strokePoints.current[strokePoints.current.length - 1];
+        if (currentStroke) currentStroke.push({ x: svgX, y: svgY });
 
         setPaths((prev) => {
           if (prev.length === 0) return prev;
@@ -299,47 +422,23 @@ export default function SandboxScreen() {
           updated[updated.length - 1] = `${updated[updated.length - 1]} L${svgX.toFixed(1)},${svgY.toFixed(1)}`;
           return updated;
         });
-        verifyTracingAccuracy(svgX, svgY);
+        registerTouch(svgX, svgY);
       },
 
       onPanResponderRelease: () => {
         if (phoneticPlayerRef.current) {
           try { phoneticPlayerRef.current.pause(); } catch {}
         }
+        tryFinish();
+      },
 
-        if (isFinished) return;
-
-        const uniqueHitsCount = new Set(hitPoints.current).size;
-        if (uniqueHitsCount === totalPointsCount) {
-          const calculatedScore = Math.max(50, Math.round(((totalMoves.current - errorMoves.current) / totalMoves.current) * 100));
-          
-          let stars = 1;
-          if (calculatedScore >= 90) stars = 3;
-          else if (calculatedScore >= 75) stars = 2;
-
-          setAccuracy(calculatedScore); 
-          setEarnedStars(stars);
-          setIsAnimalFed(false);
-          setIsFinished(true);
-          setIsOnPath(true);
-          
-          if (phoneticPlayerRef.current) {
-            try { phoneticPlayerRef.current.pause(); } catch {}
-          }
-
-          if (successPlayerRef.current) {
-            try {
-              successPlayerRef.current.seekTo(0);
-              successPlayerRef.current.play();
-            } catch {}
-          }
-          
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-          saveLocalHomePractice(calculatedScore);
-          Animated.timing(fadeAnim, { toValue: 1, duration: 400, useNativeDriver: true }).start();
-        } else {
-          setIsOnPath(true); 
+      // Android can steal the gesture (notification, parent scroll). Without this
+      // a finished shape would never unlock the reward.
+      onPanResponderTerminate: () => {
+        if (phoneticPlayerRef.current) {
+          try { phoneticPlayerRef.current.pause(); } catch {}
         }
+        tryFinish();
       },
     })
   );
@@ -358,13 +457,47 @@ export default function SandboxScreen() {
               <Text style={styles.statusText}>
                 {isFinished 
                   ? (lang === 'ph' ? `ANG GALING, ${studentName.toUpperCase()}!` : `GREAT JOB, ${studentName.toUpperCase()}!`) 
-                  : (isOnPath ? (lang === 'ph' ? 'BAKASIN MO' : 'TRACE ME') : (lang === 'ph' ? 'LUMAMPAS!' : 'OOPS!'))}
+                  : !isOnPath
+                    ? (lang === 'ph' ? 'LUMAMPAS!' : 'OOPS!')
+                    : hitIds.length >= hitsNeeded
+                      ? (lang === 'ph' ? 'TAPUSIN NA!' : 'FINISH IT!')
+                      : (lang === 'ph' ? 'BAKASIN MO' : 'TRACE ME')}
               </Text>
             </View>
 
-            <TouchableOpacity style={styles.backBtn} onPress={handleReset}>
-              <Ionicons name="refresh" size={24} color="#333" />
-            </TouchableOpacity>
+            <View style={styles.topActions}>
+              <TouchableOpacity
+                style={[styles.backBtn, (paths.length === 0 || isFinished) && styles.backBtnDisabled]}
+                onPress={handleUndo}
+                disabled={paths.length === 0 || isFinished}
+                accessibilityLabel={lang === 'ph' ? 'I-undo ang huling guhit' : 'Undo last stroke'}
+              >
+                <Ionicons name="arrow-undo" size={22} color="#333" />
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.backBtn}
+                onPress={handleReset}
+                accessibilityLabel={lang === 'ph' ? 'Ulitin mula sa simula' : 'Start over'}
+              >
+                <Ionicons name="refresh" size={22} color="#333" />
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Live progress so the child can see how much is left */}
+          <View style={styles.progressRow}>
+            <View style={styles.progressTrack}>
+              <View
+                style={[
+                  styles.progressFill,
+                  { width: `${Math.min(100, Math.round((hitIds.length / hitsNeeded) * 100))}%` },
+                ]}
+              />
+            </View>
+            <Text style={styles.progressLabel}>
+              {`${Math.min(hitIds.length, totalPointsCount)}/${totalPointsCount}`}
+            </Text>
           </View>
         </SafeAreaView>
 
@@ -390,94 +523,104 @@ export default function SandboxScreen() {
                 strokeLinejoin="round" 
               />
             ))}
-            {!isFinished && charData.points.map((pt: any) => (
-              <Circle key={pt.id} cx={pt.x} cy={pt.y} r={isTablet ? 14 : 10} fill="#EF4444" />
-            ))}
+            {!isFinished && charData.points.map((pt: any, index: number) => {
+              const isHit = hitIds.includes(pt.id);
+              const isStart = index === 0 && hitIds.length === 0;
+              return (
+                <Circle
+                  key={pt.id}
+                  cx={pt.x}
+                  cy={pt.y}
+                  r={isHit ? (isTablet ? 12 : 9) : (isStart ? (isTablet ? 20 : 16) : (isTablet ? 14 : 11))}
+                  fill={isHit ? '#22C55E' : (isStart ? '#2563EB' : '#EF4444')}
+                  opacity={isHit ? 0.45 : 1}
+                />
+              );
+            })}
           </Svg>
         </View>
 
         {isFinished && (
-          <Animated.View style={[styles.successContent, { opacity: fadeAnim }]}>
-            
-            {!isAnimalFed ? (
-              <View style={{ alignItems: 'center', width: '100%' }}>
-                <Text style={styles.rewardTitle}>🎉 TITIK {selectedChar} AY TAPOS NA!</Text>
-                <Text style={styles.rewardSubtitle}>
-                  {lang === 'ph' 
-                    ? `Gutom si ${studentName}! Pindutin ang pagkain para ipakain sa kanyang avatar:` 
-                    : `Your avatar is hungry! Tap the food to feed them:`}
-                </Text>
+          <Animated.View
+            pointerEvents={rewardReady ? 'auto' : 'none'}
+            style={[
+              styles.successContent,
+              { opacity: fadeAnim, transform: [{ scale: cardScale }] },
+            ]}
+          >
+            <View style={styles.rewardBadgeRow}>
+              <Ionicons name="trophy" size={normalize(16)} color="#B45309" />
+              <Text style={styles.rewardBadgeText}>
+                {lang === 'ph' ? 'BAGONG STICKER!' : 'NEW STICKER!'}
+              </Text>
+            </View>
 
-                <Text style={styles.animalLargeEmoji}>
-                  {currentAvatarMeta.emoji}
-                </Text>
+            <View style={styles.rewardHeaderRow}>
+              <Text style={styles.rewardTitle}>
+                {lang === 'ph'
+                  ? `NAKUMBIDA MO ANG TITIK ${selectedChar}, ${studentName.toUpperCase()}!`
+                  : `YOU TRACED THE LETTER ${selectedChar}, ${studentName.toUpperCase()}!`}
+              </Text>
+              <Text style={styles.rewardSubtitle}>
+                {lang === 'ph'
+                  ? `Ang galing! Narito ang sticker mo para sa "${charData.word}".`
+                  : `Great job! Here is your sticker for "${charData.word}".`}
+              </Text>
+            </View>
 
-                <TouchableOpacity 
-                  style={styles.foodActionBtn}
-                  onPress={() => {
-                    setIsAnimalFed(true);
-                    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                    if (crunchPlayerRef.current) {
-                      try {
-                        crunchPlayerRef.current.seekTo(0);
-                        crunchPlayerRef.current.play();
-                      } catch {}
-                    }
-                  }}
-                >
-                  <Text style={{ fontSize: normalize(32) }}>
-                    {currentAvatarMeta.food}
-                  </Text>
-                  <Text style={styles.foodBtnLabelText}>{lang === 'ph' ? 'IPAKAIN!' : 'FEED NOW!'}</Text>
-                </TouchableOpacity>
-              </View>
-            ) : (
-              <View style={{ alignItems: 'center', width: '100%' }}>
-                <Text style={styles.badgeTextHeaderHeader}>🏆 STICKER UNLOCKED!</Text>
-                
-                <View style={styles.starsRewardRow}>
-                  <Ionicons name="star" size={normalize(26)} color="#FBBF24" />
-                  <Ionicons name="star" size={normalize(32)} color={earnedStars >= 2 ? "#FBBF24" : "#D1D5DB"} style={{ marginTop: -5 }} />
-                  <Ionicons name="star" size={normalize(26)} color={earnedStars === 3 ? "#FBBF24" : "#D1D5DB"} />
+            <View style={styles.starsRewardRow}>
+              {starAnims.map((anim, index) => (
+                <Animated.View key={index} style={{ transform: [{ scale: anim }] }}>
+                  <Ionicons
+                    name="star"
+                    size={normalize(index === 1 ? 34 : 26)}
+                    color={earnedStars > index ? '#FBBF24' : '#E5E7EB'}
+                    style={index === 1 ? { marginTop: -6 } : undefined}
+                  />
+                </Animated.View>
+              ))}
+            </View>
+
+            <View style={styles.stickerEmblemFrameBox}>
+              {charData.image ? (
+                <Image source={charData.image} style={styles.anchorImage} resizeMode="contain" />
+              ) : (
+                <View style={styles.anchorImageFallback}>
+                  <Text style={styles.anchorImageFallbackText}>{selectedChar}</Text>
                 </View>
+              )}
+              <Text style={styles.stickerBadgePillLabel}>
+                {selectedChar} - {charData.word}
+              </Text>
+            </View>
 
-                <View style={styles.stickerEmblemFrameBox}>
-                  <Image source={charData.image} style={styles.anchorImage} resizeMode="contain" />
-                  <Text style={styles.stickerBadgePillLabel}>
-                    {selectedChar} - {charData.word}
-                  </Text>
-                </View>
-                
-                <Text style={styles.anchorTextDescription}>
-                  {lang === 'ph' 
-                    ? `Busog na ang avatar ni ${studentName}! Ligtas na na-save ang sticker sa offline book.` 
-                    : `Your animal is full! The sticker has been logged to your offline book.`}
-                </Text>
+            <Text style={styles.anchorTextDescription}>
+              {lang === 'ph'
+                ? 'Ligtas na na-save ang sticker sa offline book.'
+                : 'Your sticker has been saved to your offline book.'}
+            </Text>
 
-                <Text style={styles.accuracyPillTextBadge}>
-                  {lang === 'ph' ? `Katumpakan: ${accuracy}%` : `Accuracy: ${accuracy}%`}
-                </Text>
-                
-                <View style={styles.btnRow}>
-                  <TouchableOpacity style={[styles.modalBtn, styles.modalBtnSecondary]} onPress={handleReset}>
-                    <Ionicons name="refresh" size={18} color="#555" style={{ marginRight: 4 }} />
-                    <Text style={styles.modalBtnTextSec}>{lang === 'ph' ? 'Ulitin' : 'Retry'}</Text>
-                  </TouchableOpacity>
-                  
-                  <TouchableOpacity style={styles.modalBtn} onPress={handleExitOrContinue} disabled={saving}>
-                    {saving ? (
-                      <ActivityIndicator color="white" />
-                    ) : (
-                      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                        <Text style={styles.modalBtnText}>{lang === 'ph' ? 'Ipagpatuloy' : 'Continue'}</Text>
-                        <Ionicons name="arrow-forward" size={18} color="white" style={{ marginLeft: 4 }} />
-                      </View>
-                    )}
-                  </TouchableOpacity>
-                </View>
-              </View>
-            )}
+            <Text style={styles.accuracyPillTextBadge}>
+              {lang === 'ph' ? `Katumpakan: ${accuracy}%` : `Accuracy: ${accuracy}%`}
+            </Text>
 
+            <View style={styles.btnRow}>
+              <TouchableOpacity style={[styles.modalBtn, styles.modalBtnSecondary]} onPress={handleReset}>
+                <Ionicons name="refresh" size={18} color="#555" style={{ marginRight: 4 }} />
+                <Text style={styles.modalBtnTextSec}>{lang === 'ph' ? 'Ulitin' : 'Retry'}</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity style={styles.modalBtn} onPress={handleExitOrContinue} disabled={saving}>
+                {saving ? (
+                  <ActivityIndicator color="white" />
+                ) : (
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <Text style={styles.modalBtnText}>{lang === 'ph' ? 'Ipagpatuloy' : 'Continue'}</Text>
+                    <Ionicons name="arrow-forward" size={18} color="white" style={{ marginLeft: 4 }} />
+                  </View>
+                )}
+              </TouchableOpacity>
+            </View>
           </Animated.View>
         )}
 
@@ -491,23 +634,29 @@ const styles = StyleSheet.create({
   errorBg: { backgroundColor: '#FFF0F0' },
   overlay: { position: 'absolute', top: 0, left: 0, right: 0, paddingHorizontal: '6%', paddingTop: 10, zIndex: 10 },
   topRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '100%' },
+  topActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   backBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'white', justifyContent: 'center', alignItems: 'center', elevation: 3 },
+  backBtnDisabled: { opacity: 0.35 },
   statusBadge: { paddingHorizontal: 22, paddingVertical: 10, borderRadius: 20, elevation: 2 },
+  progressRow: { flexDirection: 'row', alignItems: 'center', marginTop: 10, width: '100%' },
+  progressTrack: { flex: 1, height: 10, borderRadius: 5, backgroundColor: '#FDE68A', overflow: 'hidden' },
+  progressFill: { height: '100%', borderRadius: 5, backgroundColor: '#F77F67' },
+  progressLabel: { marginLeft: 10, fontSize: normalize(11), fontWeight: '900', color: '#92400E' },
   statusText: { fontWeight: '900', fontSize: normalize(12), color: '#333', letterSpacing: 0.5 },
   svgWrapper: { width: CANVAS_WIDTH, height: CANVAS_HEIGHT, justifyContent: 'center', alignItems: 'center' },
   svgBorderContainer: { backgroundColor: 'white', borderRadius: 30, elevation: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 10 },
   
-  successContent: { position: 'absolute', backgroundColor: 'white', padding: 25, borderRadius: 35, alignItems: 'center', elevation: 25, shadowColor: '#000', shadowOpacity: 0.2, shadowRadius: 15, width: isTablet ? 450 : '88%', zIndex: 30 },
-  rewardTitle: { fontSize: normalize(14), fontWeight: '900', color: '#141414', textAlign: 'center' },
-  rewardSubtitle: { fontSize: normalize(10), color: '#666', textAlign: 'center', marginTop: 4, paddingHorizontal: 10, lineHeight: 14 },
-  animalLargeEmoji: { fontSize: normalize(75), marginVertical: 15, textAlign: 'center' },
-  foodActionBtn: { backgroundColor: '#FFFBEB', borderWidth: 2, borderColor: '#FBBF24', borderRadius: 22, paddingVertical: 12, paddingHorizontal: 25, alignItems: 'center', minWidth: '60%', elevation: 1 },
-  foodBtnLabelText: { fontSize: normalize(11), fontWeight: '900', color: '#B45309', marginTop: 4, letterSpacing: 0.5 },
-  
-  badgeTextHeaderHeader: { fontSize: normalize(15), fontWeight: '900', color: '#F77F67', textTransform: 'uppercase', textAlign: 'center' },
-  starsRewardRow: { flexDirection: 'row', gap: 4, marginVertical: 8, justifyContent: 'center', alignItems: 'center' },
+  successContent: { position: 'absolute', backgroundColor: 'white', padding: 25, paddingTop: 22, borderRadius: 35, borderWidth: 3, borderColor: '#FDE68A', alignItems: 'center', elevation: 25, shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.18, shadowRadius: 20, width: isTablet ? 450 : '88%', zIndex: 30 },
+  rewardTitle: { fontSize: normalize(16), fontWeight: '900', color: '#F77F67', textAlign: 'center', letterSpacing: 0.3 },
+  rewardSubtitle: { fontSize: normalize(11), color: '#666', textAlign: 'center', marginTop: 6, paddingHorizontal: 10, lineHeight: 15 },
+  rewardBadgeRow: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#FEF3C7', paddingHorizontal: 14, paddingVertical: 6, borderRadius: 14, marginBottom: 10 },
+  rewardBadgeText: { fontSize: normalize(10), fontWeight: '900', color: '#B45309', letterSpacing: 0.8 },
+  rewardHeaderRow: { alignItems: 'center', width: '100%' },
+  starsRewardRow: { flexDirection: 'row', gap: 6, marginVertical: 10, justifyContent: 'center', alignItems: 'center' },
   stickerEmblemFrameBox: { backgroundColor: '#F0FDF4', borderWidth: 3, borderColor: '#4ADE80', borderRadius: 25, padding: 15, marginVertical: 10, alignItems: 'center', width: '90%' },
   anchorImage: { width: isTablet ? 180 : 130, height: isTablet ? 180 : 130, marginBottom: 8 },
+  anchorImageFallback: { width: isTablet ? 180 : 130, height: isTablet ? 180 : 130, marginBottom: 8, borderRadius: 24, backgroundColor: '#DCFCE7', alignItems: 'center', justifyContent: 'center' },
+  anchorImageFallbackText: { fontSize: normalize(64), fontWeight: '900', color: '#16A34A' },
   stickerBadgePillLabel: { backgroundColor: '#4ADE80', color: '#141414', fontWeight: '900', fontSize: normalize(9), paddingHorizontal: 12, paddingVertical: 3, borderRadius: 10, textTransform: 'uppercase' },
   anchorTextDescription: { fontSize: normalize(11), fontWeight: '700', color: '#4B5563', marginBottom: 12, textAlign: 'center', paddingHorizontal: 5, lineHeight: 16 },
   accuracyPillTextBadge: { fontSize: normalize(11), color: '#16A34A', fontWeight: '900', backgroundColor: '#DCFCE7', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12, alignSelf: 'center', marginBottom: 18 },
