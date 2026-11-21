@@ -7,7 +7,6 @@ import {
   TouchableOpacity, 
   SafeAreaView, 
   Dimensions, 
-  PixelRatio, 
   ActivityIndicator, 
   Alert 
 } from 'react-native';
@@ -15,13 +14,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useLanguage } from '../_layout'; 
 import { LETTERS, NUMBERS } from '../../constants/characterLibrary';
+import { normalizeFor, useResponsive } from '../../lib/responsive';
 import { db, auth } from '../../lib/firebase';
 import { doc, onSnapshot, query, collection, where, getDoc } from 'firebase/firestore';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const scale = SCREEN_WIDTH / 375;
-const normalize = (size: number) => Math.round(PixelRatio.roundToNearestPixel(size * scale));
-const isTablet = SCREEN_WIDTH > 550;
+const INITIAL_WIDTH = Dimensions.get('window').width;
+const normalize = (size: number) => normalizeFor(INITIAL_WIDTH, size);
 
 interface CharacterStats {
   [key: string]: {
@@ -33,6 +31,7 @@ interface CharacterStats {
 export default function DashboardScreen() {
   const router = useRouter();
   const { lang } = useLanguage();
+  const { width: windowWidth, isTablet: isTabletDevice } = useResponsive();
 
   const [activeStudentName, setActiveStudentName] = useState<string>('---');
   const [activeStudentId, setActiveStudentId] = useState<string | null>(null);
@@ -185,8 +184,9 @@ export default function DashboardScreen() {
     );
   };
 
-  const numColumns = isTablet ? 6 : 4;
-  const itemWidth = (SCREEN_WIDTH * 0.88) / numColumns - normalize(8);
+  const numColumns = isTabletDevice ? 6 : 4;
+  const gridGap = 8;
+  const itemWidth = (windowWidth * 0.88 - gridGap * (numColumns - 1)) / numColumns;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -263,7 +263,7 @@ export default function DashboardScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FFFBEB' },
-  scrollContent: { paddingHorizontal: '6%', paddingTop: 20, paddingBottom: 30 },
+  scrollContent: { paddingHorizontal: '6%', paddingTop: 20, paddingBottom: 120 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 25 },
   userInfo: { flex: 1 },
   welcomeText: { fontSize: normalize(11), color: '#777', fontWeight: 'bold' },

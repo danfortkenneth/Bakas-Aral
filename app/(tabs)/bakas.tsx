@@ -1,11 +1,12 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { StyleSheet, View, PanResponder, TouchableOpacity, Text, Image, Animated, Dimensions, PixelRatio, ActivityIndicator } from 'react-native';
+import { StyleSheet, View, PanResponder, TouchableOpacity, Text, Image, Animated, Dimensions, ActivityIndicator, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { createAudioPlayer } from 'expo-audio';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { SafeAreaView, SafeAreaProvider } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { normalizeFor, useResponsive } from '../../lib/responsive';
 import { db } from '../../lib/firebase';
 import { collection, addDoc } from 'firebase/firestore';
 import { useLanguage } from '../_layout';
@@ -22,21 +23,37 @@ import {
   requiredHits,
 } from '../../lib/tracing';
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-const scale = SCREEN_WIDTH / 375;
-const normalize = (size: number) => Math.round(PixelRatio.roundToNearestPixel(size * scale));
-const isTablet = SCREEN_WIDTH > 550;
+// Initial metrics for the static stylesheet. The live canvas below uses
+// useResponsive() so split-screen / foldable resizes still map touches 1:1.
+const INITIAL_WIDTH = Dimensions.get('window').width;
+const INITIAL_HEIGHT = Dimensions.get('window').height;
+const normalize = (size: number) => normalizeFor(INITIAL_WIDTH, size);
+const isTablet = Math.min(INITIAL_WIDTH, INITIAL_HEIGHT) >= 600;
 
-// Keep the drawing area at the character's 2:3 aspect ratio so touches map 1:1.
-const { width: CANVAS_WIDTH, height: CANVAS_HEIGHT } = fitTracingCanvas(
-  SCREEN_WIDTH * 0.9,
-  SCREEN_HEIGHT * 0.55
-);
+/** Header content height below the top safe-area inset. */
+const HEADER_SPACE = 88;
+/** Clearance for the floating tab bar that overlays this tab screen. */
+const TAB_BAR_SPACE = 112;
 
 export default function BakasScreen() {
   const router = useRouter();
   const { lang } = useLanguage();
   const params = useLocalSearchParams();
+
+  const insets = useSafeAreaInsets();
+  const { width: windowWidth, height: windowHeight } = useResponsive();
+
+  // The canvas fills the space under the header and above the floating tab bar,
+  // kept at the character's 2:3 ratio so touches map 1:1 to the 400×600 viewBox
+  // on every device.
+  const canvas = fitTracingCanvas(
+    windowWidth * 0.92,
+    Math.max(160, windowHeight - insets.top - HEADER_SPACE - TAB_BAR_SPACE)
+  );
+  const canvasRef = useRef(canvas);
+  useEffect(() => {
+    canvasRef.current = { width: canvas.width, height: canvas.height };
+  }, [canvas.width, canvas.height]);
   
   const selectedChar = (params.selectedChar as string) || 'A';
   const studentId = (params.currentStudentId as string) || null;
@@ -375,8 +392,8 @@ export default function BakasScreen() {
       onPanResponderGrant: (evt) => {
         if (finishedRef.current) return;
         const { locationX, locationY } = evt.nativeEvent;
-        const svgX = (locationX / CANVAS_WIDTH) * 400;
-        const svgY = (locationY / CANVAS_HEIGHT) * 600;
+        const svgX = (locationX / canvasRef.current.width) * 400;
+        const svgY = (locationY / canvasRef.current.height) * 600;
         strokePoints.current.push([{ x: svgX, y: svgY }]);
         lastHapticPoint.current = { x: svgX, y: svgY };
         lastHapticTime.current = Date.now();
@@ -391,8 +408,8 @@ export default function BakasScreen() {
       onPanResponderMove: (evt) => {
         if (finishedRef.current) return;
         const { locationX, locationY } = evt.nativeEvent;
-        const svgX = (locationX / CANVAS_WIDTH) * 400;
-        const svgY = (locationY / CANVAS_HEIGHT) * 600;
+        const svgX = (locationX / canvasRef.current.width) * 400;
+        const svgY = (locationY / canvasRef.current.height) * 600;
 
         const currentStroke = strokePoints.current[strokePoints.current.length - 1];
         if (currentStroke) currentStroke.push({ x: svgX, y: svgY });
@@ -425,8 +442,7 @@ export default function BakasScreen() {
   );
 
   return (
-    <SafeAreaProvider>
-      <View style={[styles.container, !isOnPath && styles.errorBg]}>
+    <View style={[styles.container, !isOnPath && styles.errorBg]}>
         
         <SafeAreaView edges={['top']} style={styles.overlay}>
           <View style={styles.topRow}>
@@ -435,7 +451,12 @@ export default function BakasScreen() {
             </TouchableOpacity>
 
             <View style={[styles.statusBadge, { backgroundColor: isFinished ? '#DCFCE7' : (isOnPath ? '#FEF3C7' : '#FEE2E2') }]}>
-              <Text style={styles.statusText}>
+              <Text
+                style={styles.statusText}
+                numberOfLines={1}
+                adjustsFontSizeToFit
+                minimumFontScale={0.8}
+              >
                 {isFinished
                   ? (lang === 'ph' ? 'ANG GALING!' : 'GREAT JOB!')
                   : !isOnPath
@@ -482,53 +503,68 @@ export default function BakasScreen() {
           </View>
         </SafeAreaView>
 
-        <View style={styles.svgWrapper} {...panResponder.panHandlers}>
-          <Svg height={CANVAS_HEIGHT} width={CANVAS_WIDTH} viewBox="0 0 400 600" style={styles.svgBorderContainer}>
-            <Path d={charData.path} fill="none" stroke="#EAEAEA" strokeWidth={isTablet ? 95 : 80} strokeLinecap="round" strokeLinejoin="round" />
-            <Path 
-              d={charData.path} 
-              fill="none" 
-              stroke={isFinished ? "#4ADE80" : (isOnPath ? "#FED7AA" : "#FCA5A5")} 
-              strokeWidth={isTablet ? 80 : 65} 
-              strokeLinecap="round" 
-              strokeLinejoin="round"
-            />
-            {paths.map((strokePath, index) => (
+        <View style={[styles.canvasArea, { paddingBottom: TAB_BAR_SPACE }]}>
+          <View
+            style={[styles.svgWrapper, { width: canvas.width, height: canvas.height }]}
+            {...panResponder.panHandlers}
+          >
+            <Svg width={canvas.width} height={canvas.height} viewBox="0 0 400 600" style={styles.svgBorderContainer}>
+              <Path d={charData.path} fill="none" stroke="#EAEAEA" strokeWidth={80} strokeLinecap="round" strokeLinejoin="round" />
               <Path 
-                key={index}
-                d={strokePath} 
+                d={charData.path} 
                 fill="none" 
-                stroke={isOnPath ? "#F77F67" : "#EF4444"} 
-                strokeWidth={isTablet ? 16 : 12} 
+                stroke={isFinished ? "#4ADE80" : (isOnPath ? "#FED7AA" : "#FCA5A5")} 
+                strokeWidth={65} 
                 strokeLinecap="round" 
-                strokeLinejoin="round" 
+                strokeLinejoin="round"
               />
-            ))}
-            {!isFinished && charData.points.map((pt: any, index: number) => {
-              const isHit = hitIds.includes(pt.id);
-              const isStart = index === 0 && hitIds.length === 0;
-              return (
-                <Circle
-                  key={pt.id}
-                  cx={pt.x}
-                  cy={pt.y}
-                  r={isHit ? (isTablet ? 12 : 9) : (isStart ? (isTablet ? 20 : 16) : (isTablet ? 14 : 11))}
-                  fill={isHit ? '#22C55E' : (isStart ? '#2563EB' : '#EF4444')}
-                  opacity={isHit ? 0.45 : 1}
+              {paths.map((strokePath, index) => (
+                <Path 
+                  key={index}
+                  d={strokePath} 
+                  fill="none" 
+                  stroke={isOnPath ? "#F77F67" : "#EF4444"} 
+                  strokeWidth={12} 
+                  strokeLinecap="round" 
+                  strokeLinejoin="round" 
                 />
-              );
-            })}
-          </Svg>
+              ))}
+              {!isFinished && charData.points.map((pt: any, index: number) => {
+                const isHit = hitIds.includes(pt.id);
+                const isStart = index === 0 && hitIds.length === 0;
+                return (
+                  <Circle
+                    key={pt.id}
+                    cx={pt.x}
+                    cy={pt.y}
+                    r={isHit ? 9 : (isStart ? 16 : 11)}
+                    fill={isHit ? '#22C55E' : (isStart ? '#2563EB' : '#EF4444')}
+                    opacity={isHit ? 0.45 : 1}
+                  />
+                );
+              })}
+            </Svg>
+          </View>
         </View>
 
         {isFinished && (
+          <View style={[styles.rewardOverlay, { paddingBottom: TAB_BAR_SPACE }]} pointerEvents="box-none">
           <Animated.View
             pointerEvents={rewardReady ? 'auto' : 'none'}
             style={[
               styles.successContent,
-              { opacity: fadeAnim, transform: [{ scale: cardScale }] },
+              {
+                opacity: fadeAnim,
+                transform: [{ scale: cardScale }],
+                maxHeight: Math.max(260, windowHeight - insets.top - insets.bottom - TAB_BAR_SPACE - 24),
+              },
             ]}
           >
+            <ScrollView
+              style={styles.rewardScroll}
+              contentContainerStyle={styles.rewardScrollContent}
+              showsVerticalScrollIndicator={false}
+            >
             <View style={styles.rewardBadgeRow}>
               <Ionicons name="trophy" size={normalize(16)} color="#B45309" />
               <Text style={styles.rewardBadgeText}>
@@ -600,32 +636,37 @@ export default function BakasScreen() {
                 )}
               </TouchableOpacity>
             </View>
+            </ScrollView>
           </Animated.View>
+          </View>
         )}
 
       </View>
-    </SafeAreaProvider>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFFBEB', justifyContent: 'center', alignItems: 'center' },
+  container: { flex: 1, backgroundColor: '#FFFBEB' },
   errorBg: { backgroundColor: '#FFF0F0' },
-  overlay: { position: 'absolute', top: 0, left: 0, right: 0, paddingHorizontal: '6%', paddingTop: 10, zIndex: 10 },
+  overlay: { paddingHorizontal: '6%', paddingTop: 10, paddingBottom: 6, zIndex: 10 },
   topRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '100%' },
   topActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   backBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: 'white', justifyContent: 'center', alignItems: 'center', elevation: 3 },
   backBtnDisabled: { opacity: 0.35 },
-  statusBadge: { paddingHorizontal: 22, paddingVertical: 10, borderRadius: 20, elevation: 2 },
+  statusBadge: { paddingHorizontal: 22, paddingVertical: 10, borderRadius: 20, elevation: 2, flexShrink: 1, marginHorizontal: 8 },
   progressRow: { flexDirection: 'row', alignItems: 'center', marginTop: 10, width: '100%' },
   progressTrack: { flex: 1, height: 10, borderRadius: 5, backgroundColor: '#FDE68A', overflow: 'hidden' },
   progressFill: { height: '100%', borderRadius: 5, backgroundColor: '#F77F67' },
   progressLabel: { marginLeft: 10, fontSize: normalize(11), fontWeight: '900', color: '#92400E' },
-  statusText: { fontWeight: '900', fontSize: normalize(12), color: '#333', letterSpacing: 0.5 },
-  svgWrapper: { width: CANVAS_WIDTH, height: CANVAS_HEIGHT, justifyContent: 'center', alignItems: 'center' },
+  statusText: { fontWeight: '900', fontSize: normalize(12), color: '#333', letterSpacing: 0.5, textAlign: 'center' },
+  canvasArea: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: '4%', paddingVertical: 6 },
+  svgWrapper: { justifyContent: 'center', alignItems: 'center' },
   svgBorderContainer: { backgroundColor: 'white', borderRadius: 30, elevation: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 10 },
   
-  successContent: { position: 'absolute', backgroundColor: 'white', padding: 25, paddingTop: 22, borderRadius: 35, borderWidth: 3, borderColor: '#FDE68A', alignItems: 'center', elevation: 25, shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.18, shadowRadius: 20, width: isTablet ? 450 : '88%', zIndex: 30 },
+  rewardOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center', zIndex: 30 },
+  successContent: { backgroundColor: 'white', padding: 25, paddingTop: 22, borderRadius: 35, borderWidth: 3, borderColor: '#FDE68A', alignItems: 'center', elevation: 25, shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.18, shadowRadius: 20, width: isTablet ? 450 : '88%', maxHeight: '88%', flexShrink: 1 },
+  rewardScroll: { width: '100%' },
+  rewardScrollContent: { alignItems: 'center' },
   rewardTitle: { fontSize: normalize(16), fontWeight: '900', color: '#F77F67', textAlign: 'center', letterSpacing: 0.3 },
   rewardSubtitle: { fontSize: normalize(11), color: '#666', textAlign: 'center', marginTop: 6, paddingHorizontal: 10, lineHeight: 15 },
   rewardBadgeRow: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#FEF3C7', paddingHorizontal: 14, paddingVertical: 6, borderRadius: 14, marginBottom: 10 },

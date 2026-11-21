@@ -135,6 +135,23 @@ Finishing a character unlocks the **sticker card** for that anchor word. The
 card waits ~400 ms, then fades/springs in while the stars pop one by one, and it
 stays non-interactive until it is visible.
 
+## Device support
+
+The app is portrait-only and works from 320 dp phones up to 12.9" tablets:
+
+- `lib/responsive.ts` provides `useResponsive()` (live width/height, tablet and
+  small-phone flags) plus `scaleFor()`/`normalizeFor()`. Text grows gently on
+  phones and is capped at 1.35× on tablets, so it never doubles.
+- The tracing canvas is re-fitted on every layout change and reserves space for
+  the header and the floating tab bar, so every guide dot stays reachable and
+  touch coordinates keep mapping 1:1 to the 400×600 viewBox.
+- The tab bar sizes its slots from the live window width, so all five tabs fit a
+  320 dp screen.
+- Auth, welcome and role-selection screens scroll instead of clipping on short
+  screens; the sticker reward card scrolls inside a height-capped overlay.
+- Safe-area insets come from the single root `SafeAreaProvider` in
+  `app/_layout.tsx` (screens must not add their own provider).
+
 ## Roles
 
 - **Parent / Magulang** — monitor a child's progress and activities

@@ -17,6 +17,7 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useLanguage } from '../_layout'; 
 import { useRouter } from 'expo-router'; 
 import { auth, db } from '../../lib/firebase';
+import { scaleFor } from '../../lib/responsive';
 import { 
   doc, 
   updateDoc, 
@@ -31,7 +32,7 @@ import * as MediaLibrary from 'expo-media-library/legacy'; // Inayos dito para s
 import * as FileSystem from 'expo-file-system/legacy'; // Inayos din para sa legacy compatibility
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const scale = SCREEN_WIDTH / 375;
+const scale = scaleFor(SCREEN_WIDTH);
 const normalize = (size: number) => Math.round(PixelRatio.roundToNearestPixel(size * scale));
 
 const ANIMAL_AVATARS = [

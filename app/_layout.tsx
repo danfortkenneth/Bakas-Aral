@@ -1,6 +1,7 @@
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { createContext, useState, useContext, useEffect, useRef } from 'react';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { auth, db } from '../lib/firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { doc, onSnapshot } from 'firebase/firestore';
@@ -129,18 +130,20 @@ export default function RootLayout() {
   }
 
   return (
-    <LanguageContext.Provider value={{ lang, setLang }}>
-      <UserContext.Provider value={{ firebaseUser, userData, activeStudent, loading }}>
-        <Stack screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="index" />
-          <Stack.Screen name="(auth)/user-selection" />
-          <Stack.Screen name="(auth)/login" />
-          <Stack.Screen name="(auth)/signup" />
-          <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} />
-          <Stack.Screen name="parent-dashboard" />
-        </Stack>
-      </UserContext.Provider>
-    </LanguageContext.Provider>
+    <SafeAreaProvider>
+      <LanguageContext.Provider value={{ lang, setLang }}>
+        <UserContext.Provider value={{ firebaseUser, userData, activeStudent, loading }}>
+          <Stack screenOptions={{ headerShown: false }}>
+            <Stack.Screen name="index" />
+            <Stack.Screen name="(auth)/user-selection" />
+            <Stack.Screen name="(auth)/login" />
+            <Stack.Screen name="(auth)/signup" />
+            <Stack.Screen name="(tabs)" options={{ animation: 'fade' }} />
+            <Stack.Screen name="parent-dashboard" />
+          </Stack>
+        </UserContext.Provider>
+      </LanguageContext.Provider>
+    </SafeAreaProvider>
   );
 }
 

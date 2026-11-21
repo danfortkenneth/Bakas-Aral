@@ -5,17 +5,15 @@ import {
   View, 
   TouchableOpacity, 
   SafeAreaView, 
-  Dimensions 
+  Dimensions,
+  ScrollView
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useLanguage } from '../_layout'; 
+import { normalizeFor } from '../../lib/responsive';
 
 const { width } = Dimensions.get('window');
-const isTablet = width >= 768;
-const scaleFont = (size: number) => {
-  if (isTablet) return size * 1.2;
-  return size * (width / 375);
-};
+const scaleFont = (size: number) => normalizeFor(width, size);
 
 export default function UserSelection() {
   const router = useRouter();
@@ -65,7 +63,11 @@ export default function UserSelection() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.responsiveWrapper}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.responsiveWrapper}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.header}>
           <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
             <Text style={{ fontSize: 20 }}>←</Text>
@@ -145,20 +147,21 @@ export default function UserSelection() {
             {t.login.split('?')[0]}? <Text style={styles.loginLink}>{t.login.split('?')[1]}</Text>
           </Text>
         </TouchableOpacity>
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFFBEB', alignItems: 'center' },
-  responsiveWrapper: { flex: 1, width: '100%', maxWidth: 550, paddingHorizontal: width * 0.08 },
+  container: { flex: 1, backgroundColor: '#FFFBEB' },
+  scroll: { width: '100%' },
+  responsiveWrapper: { flexGrow: 1, width: '100%', maxWidth: 550, alignSelf: 'center', paddingHorizontal: width * 0.08 },
   header: { flexDirection: 'row', alignItems: 'center', marginTop: 20, justifyContent: 'space-between' },
   backBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'white', justifyContent: 'center', alignItems: 'center', elevation: 2 },
   progressContainer: { flex: 0.8, height: 6, backgroundColor: '#E5E5E5', borderRadius: 3, overflow: 'hidden' },
   progressBar: { width: '50%', height: '100%', backgroundColor: '#F77F67' },
   progressText: { fontSize: 12, color: '#999', fontWeight: 'bold' },
-  content: { flex: 1, justifyContent: 'center' },
+  content: { flexGrow: 1, justifyContent: 'center' },
   subTitle: { fontSize: 10, color: '#999', fontWeight: '700', letterSpacing: 1 },
   mainTitle: { fontSize: scaleFont(26), fontWeight: '900', color: '#333', marginVertical: 15 },
   card: { 

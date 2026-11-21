@@ -7,7 +7,8 @@ import {
   SafeAreaView, 
   Dimensions, 
   Image,
-  Platform
+  Platform,
+  ScrollView
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useLanguage } from './_layout';
@@ -63,7 +64,11 @@ export default function WelcomePage() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.responsiveWrapper}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.responsiveWrapper}
+        showsVerticalScrollIndicator={false}
+      >
         {/* LANGUAGE SWITCHER */}
         <View style={styles.langSwitcher}>
           <TouchableOpacity onPress={() => setLang('en')} style={styles.langBtn}>
@@ -136,14 +141,15 @@ export default function WelcomePage() {
           
           <Text style={styles.termsText}>{t.footer}</Text>
         </View>
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFFBEB', alignItems: 'center', justifyContent: 'center' },
-  responsiveWrapper: { flex: 1, width: '100%', maxWidth: 480, justifyContent: 'space-between' },
+  container: { flex: 1, backgroundColor: '#FFFBEB' },
+  scroll: { width: '100%' },
+  responsiveWrapper: { flexGrow: 1, width: '100%', maxWidth: 480, alignSelf: 'center', justifyContent: 'space-between' },
   langSwitcher: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
@@ -164,7 +170,7 @@ const styles = StyleSheet.create({
   brandSub: { fontSize: scaleFont(20), fontWeight: 'bold', color: '#333' },
   pill: { backgroundColor: 'white', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, alignSelf: 'flex-start', marginTop: 15, borderWidth: 1, borderColor: '#F0F0F0' },
   pillText: { fontSize: scaleFont(10), color: '#666', fontWeight: '700' },
-  mainContent: { flex: 1, paddingHorizontal: 24, justifyContent: 'center', marginVertical: 20 },
+  mainContent: { flexGrow: 1, paddingHorizontal: 24, justifyContent: 'center', marginVertical: 20 },
   titleBlack: { fontSize: scaleFont(36), fontWeight: '800', color: '#222' },
   titleOrange: { fontSize: scaleFont(36), fontWeight: '800', color: '#F7A072', marginTop: -5 },
   description: { marginTop: 12, fontSize: scaleFont(14), color: '#666', lineHeight: Platform.OS === 'web' ? 22 : scaleFont(22) },

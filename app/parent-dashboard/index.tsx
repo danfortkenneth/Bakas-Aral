@@ -19,9 +19,10 @@ import * as ImagePicker from 'expo-image-picker';
 import { File } from 'expo-file-system';
 import jsQR from 'jsqr';
 import { decode as decodeJpeg } from 'jpeg-js';
+import { scaleFor } from '../../lib/responsive';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const scale = SCREEN_WIDTH / 375;
+const scale = scaleFor(SCREEN_WIDTH);
 const normalize = (size: number) => Math.round(PixelRatio.roundToNearestPixel(size * scale));
 
 interface ChildProgressReport {

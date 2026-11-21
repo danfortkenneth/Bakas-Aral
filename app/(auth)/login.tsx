@@ -10,25 +10,20 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  PixelRatio,
   Alert,
   ActivityIndicator
 } from 'react-native';
 import { useRouter } from 'expo-router';
 
 import { auth, db } from '../../lib/firebase';
+import { normalizeFor } from '../../lib/responsive';
 import { signInWithEmailAndPassword, signOut, sendPasswordResetEmail } from 'firebase/auth';
 import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-const isTablet = SCREEN_WIDTH >= 768;
-const scale = SCREEN_WIDTH / 375;
-const normalize = (size: number) => {
-  if (isTablet) return Math.round(PixelRatio.roundToNearestPixel(size * 1.2));
-  const newSize = size * scale;
-  return Math.round(PixelRatio.roundToNearestPixel(newSize));
-};
+const isTablet = Math.min(SCREEN_WIDTH, SCREEN_HEIGHT) >= 600;
+const normalize = (size: number) => normalizeFor(SCREEN_WIDTH, size);
 
 export default function LoginPage() {
   const router = useRouter();

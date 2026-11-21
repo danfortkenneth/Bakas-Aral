@@ -470,7 +470,7 @@ export default function AdminDashboard() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#FFFBEB' },
-  scrollPadding: { paddingHorizontal: width * 0.05, paddingBottom: 30 },
+  scrollPadding: { paddingHorizontal: '5%', paddingBottom: 120 },
   
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 25, marginBottom: 15 },
   headerLeft: { flex: 1 },

@@ -16,15 +16,12 @@ import {
 import { useRouter, useLocalSearchParams } from 'expo-router';
 
 import { auth, db } from '../../lib/firebase'; 
+import { normalizeFor } from '../../lib/responsive';
 import { createUserWithEmailAndPassword, updateProfile, signOut } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 const { width } = Dimensions.get('window');
-const isTablet = width >= 768;
-const scaleFont = (size: number) => {
-  if (isTablet) return size * 1.2;
-  return size * (width / 375);
-};
+const scaleFont = (size: number) => normalizeFor(width, size);
 
 export default function Signup() {
   const router = useRouter();

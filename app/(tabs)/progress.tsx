@@ -6,9 +6,10 @@ import { db, auth } from '../../lib/firebase';
 import { collection, query, where, onSnapshot, doc } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
 import { loadParentSync } from '../../lib/parentSync';
+import { scaleFor } from '../../lib/responsive';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const scale = SCREEN_WIDTH / 375;
+const scale = scaleFor(SCREEN_WIDTH);
 const normalize = (size: number) => Math.round(PixelRatio.roundToNearestPixel(size * scale));
 
 interface CharacterStats {

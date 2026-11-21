@@ -1,15 +1,12 @@
 import { Tabs, useRouter } from 'expo-router';
-import { View, TouchableOpacity, Text, StyleSheet, Platform, Dimensions, PixelRatio, ActivityIndicator } from 'react-native';
+import { View, TouchableOpacity, Text, StyleSheet, Platform, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useLanguage, useUser } from '../_layout'; 
 import { useEffect, useState } from 'react';
 import { db } from '../../lib/firebase';
 import { doc, onSnapshot } from 'firebase/firestore';
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const scale = SCREEN_WIDTH / 375;
-const normalize = (size: number) => Math.round(PixelRatio.roundToNearestPixel(size * scale));
-const isTablet = SCREEN_WIDTH > 550;
+import { normalizeFor, useResponsive } from '../../lib/responsive';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function TabLayout() {
   const { firebaseUser } = useUser();
@@ -35,6 +32,8 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
   const router = useRouter();
   const { lang } = useLanguage();
   const { firebaseUser } = useUser();
+  const insets = useSafeAreaInsets();
+  const { width: windowWidth, isTablet: isTabletDevice, isSmallPhone } = useResponsive();
   const [roleState, setRoleState] = useState<'admin' | 'teacher' | null>(null);
   const [loadedUid, setLoadedUid] = useState<string | null>(null);
 
@@ -66,10 +65,20 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
   const role = firebaseUser ? roleState : null;
   const loading = !!firebaseUser && loadedUid !== firebaseUser.uid;
 
+  // Live metrics so the floating bar fits 320 dp phones and wide tablets.
+  const barWidth = Math.min(windowWidth * 0.9, isTabletDevice ? 520 : 460);
+  const barHeight = isSmallPhone ? 64 : isTabletDevice ? 85 : 75;
+  const barBottom = Math.max(insets.bottom, Platform.OS === 'ios' ? 16 : 12);
+
   if (loading) {
     return (
-      <View style={styles.tabBarContainer}>
-        <View style={[styles.tabBar, { justifyContent: 'center' }]}>
+      <View
+        style={[
+          styles.tabBarContainer,
+          { bottom: barBottom, width: barWidth, left: (windowWidth - barWidth) / 2 },
+        ]}
+      >
+        <View style={[styles.tabBar, { justifyContent: 'center', height: barHeight }]}>
           <ActivityIndicator color="#F77F67" size="small" />
         </View>
       </View>
@@ -85,9 +94,19 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
     }
   });
 
+  const routeCount = Math.max(visibleRoutes.length, 1);
+  // Active pill and inactive slots share the bar; shrink both on narrow screens.
+  const activeSize = Math.max(46, Math.min(isTabletDevice ? 78 : 68, barWidth / routeCount - 8));
+  const inactiveMinWidth = Math.max(38, Math.min(60, barWidth / routeCount - 6));
+
   return (
-    <View style={styles.tabBarContainer}>
-      <View style={styles.tabBar}>
+    <View
+      style={[
+        styles.tabBarContainer,
+        { bottom: barBottom, width: barWidth, left: (windowWidth - barWidth) / 2 },
+      ]}
+    >
+      <View style={[styles.tabBar, { height: barHeight }]}>
         {visibleRoutes.map((route: any) => {
           const originalIndex = state.routes.findIndex((r: any) => r.key === route.key);
           const isFocused = state.index === originalIndex;
@@ -135,15 +154,22 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
             <TouchableOpacity
               key={route.key}
               onPress={onPress}
-              style={isFocused ? styles.tabItemActive : styles.tabItem}
+              style={isFocused
+                ? [styles.tabItemActive, {
+                    width: activeSize,
+                    height: activeSize,
+                    borderRadius: activeSize / 2,
+                    marginTop: -(activeSize * 0.3),
+                  }]
+                : [styles.tabItem, { minWidth: inactiveMinWidth }]}
               activeOpacity={0.8}
             >
               <Ionicons 
                 name={iconName as any} 
-                size={isFocused ? normalize(18) : normalize(22)} 
+                size={isFocused ? (isSmallPhone ? 16 : 18) : (isSmallPhone ? 19 : 22)}
                 color={isFocused ? 'white' : '#AAA'} 
               />
-              <Text style={[styles.tabLabel, { color: isFocused ? 'white' : '#AAA' }]}>
+              <Text style={[styles.tabLabel, { color: isFocused ? 'white' : '#AAA', fontSize: isSmallPhone ? 7.5 : normalizeFor(windowWidth, 8.5) }]}>
                 {displayTitle}
               </Text>
             </TouchableOpacity>
@@ -157,16 +183,11 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
 const styles = StyleSheet.create({
   tabBarContainer: {
     position: 'absolute',
-    bottom: Platform.OS === 'ios' ? 30 : 20,
-    left: isTablet ? (SCREEN_WIDTH - 520) / 2 : '5%',
-    right: isTablet ? (SCREEN_WIDTH - 520) / 2 : '5%',
-    width: isTablet ? 520 : '90%',
     alignSelf: 'center',
   },
   tabBar: {
     flexDirection: 'row',
     backgroundColor: 'white',
-    height: isTablet ? 85 : 75,
     borderRadius: 40,
     justifyContent: 'space-around',
     alignItems: 'center',
@@ -178,12 +199,8 @@ const styles = StyleSheet.create({
   },
   tabItemActive: {
     backgroundColor: '#F77F67',
-    width: isTablet ? 78 : 68,
-    height: isTablet ? 78 : 68,
-    borderRadius: 39,
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: -20, 
     elevation: 6,
     shadowColor: '#F77F67',
     shadowOffset: { width: 0, height: 4 },
@@ -194,10 +211,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 8,
-    minWidth: 60,
   },
   tabLabel: {
-    fontSize: normalize(8.5),
     fontWeight: '900',
     marginTop: 2,
   }, 
