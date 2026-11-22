@@ -19,7 +19,7 @@ export type HitPoint = {
   /** First/last checkpoint of a stroke — children rarely start or stop exactly on the mark. */
   endpoint: boolean;
 };
-export type TraceSegment = { x1: number; y1: number; x2: number; y2: number };
+export type TraceSegment = { x1: number; y1: number; x2: number; y2: number; strokeId: number };
 
 export type TraceCharacter = {
   path: string;
@@ -159,16 +159,18 @@ export function buildCharacter(strokes: TracePoint[][]): TraceCharacter {
     .join(' ');
 
   const segments: TraceSegment[] = [];
-  for (const stroke of denseStrokes.map((stroke) => densifyStroke(stroke))) {
-    for (let i = 0; i < stroke.length - 1; i++) {
+  denseStrokes.forEach((stroke, strokeId) => {
+    const points = densifyStroke(stroke);
+    for (let i = 0; i < points.length - 1; i++) {
       segments.push({
-        x1: r(stroke[i].x),
-        y1: r(stroke[i].y),
-        x2: r(stroke[i + 1].x),
-        y2: r(stroke[i + 1].y),
+        x1: r(points[i].x),
+        y1: r(points[i].y),
+        x2: r(points[i + 1].x),
+        y2: r(points[i + 1].y),
+        strokeId,
       });
     }
-  }
+  });
 
   const points: HitPoint[] = [];
   let nextId = 1;
@@ -176,8 +178,12 @@ export function buildCharacter(strokes: TracePoint[][]): TraceCharacter {
   denseStrokes.forEach((stroke, strokeId) => {
     const samples = sampleStroke(stroke);
     samples.forEach((point, index) => {
+      // Only dedupe inside the same stroke. A crossbar legitimately starts/ends
+      // right beside a leg, and those dots must stay visible.
       const duplicate = points.some(
-        (existing) => Math.hypot(existing.x - point.x, existing.y - point.y) < 22
+        (existing) =>
+          existing.strokeId === strokeId &&
+          Math.hypot(existing.x - point.x, existing.y - point.y) < 22
       );
       if (!duplicate) {
         points.push({

@@ -66,6 +66,13 @@ const ENGLISH_WORDS: Record<string, string> = {
   '2': 'Two',
 };
 
+/** Bold letter colours from the reference artwork. */
+export const LETTER_COLORS: Record<string, string> = {
+  A: '#1736D6',
+  B: '#F21117',
+  C: '#FFD400',
+};
+
 /** Short sounds used when the child first touches a character. */
 const PHONETIC_SOUNDS: Record<string, string> = {
   A: 'Ah',

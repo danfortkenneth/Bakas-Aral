@@ -2,7 +2,9 @@
  * The tracing play area (upgraded).
  *
  * Same props and same game rules as before — the screen decides everything,
- * this component only draws. New in this version:
+ * this component only draws. The character body uses `LETTER_COLORS` (blue A,
+ * red B, yellow C) with a white sticker outline, matching the reference art.
+ * New in this version:
  *  - the NEXT dot pulses, reached dots pop with sparkles
  *  - the bee springs smoothly to the finger, floats + flaps when idle, and
  *    bounces every time a dot is reached
@@ -20,7 +22,6 @@ import type { HitPoint } from '../constants/traceableData';
 const VIEW_W = 400;
 const VIEW_H = 600;
 const LETTER_WIDTH = 88;
-const OUTLINE_WIDTH = 100;
 /** Traced colour is slimmer than the letter so it reads as a finger trail. */
 const FILL_WIDTH = 60;
 /** Seconds of no progress before the hint hand appears. */
@@ -38,6 +39,8 @@ export type TraceCanvasProps = {
   isOnPath: boolean;
   /** Finger position in viewBox coordinates — the bee rides here. */
   beePos: { x: number; y: number };
+  /** Base colour of the character. */
+  color?: string;
   panHandlers: any;
 };
 
@@ -188,6 +191,7 @@ export default function TraceCanvas({
   isFinished,
   isOnPath,
   beePos,
+  color = '#0E5C5C',
   panHandlers,
 }: TraceCanvasProps) {
   const sx = width / VIEW_W;
@@ -337,12 +341,11 @@ export default function TraceCanvas({
         <Ellipse cx="350" cy="680" rx="260" ry="170" fill="#7FCC66" />
         <Ellipse cx="200" cy="720" rx="320" ry="140" fill="#B9E88F" opacity={0.55} />
 
-        {/* Character: white sticker outline + dark teal body */}
-        <Path d={path} fill="none" stroke="#FFFFFF" strokeWidth={OUTLINE_WIDTH} strokeLinecap="round" strokeLinejoin="round" />
+        {/* Character: flat solid body, matching the reference artwork */}
         <Path
           d={path}
           fill="none"
-          stroke={isFinished ? '#1F8A5B' : '#0E5C5C'}
+          stroke={isFinished ? '#1F8A5B' : color}
           strokeWidth={LETTER_WIDTH}
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -357,11 +360,10 @@ export default function TraceCanvas({
           </React.Fragment>
         ))}
 
-        {/* Checkpoints: only the current stroke's dots, close together and in order */}
+        {/* All remaining checkpoints stay visible; the next one is highlighted */}
         {!isFinished &&
           points.map((point) => {
             if (hitIds.includes(point.id)) return null;
-            if (nextPoint && point.strokeId !== nextPoint.strokeId) return null;
             const isNext = point.id === nextPoint?.id;
             return (
               <Circle
@@ -370,7 +372,7 @@ export default function TraceCanvas({
                 cy={point.y}
                 r={isNext ? 12 : 10}
                 fill="#FFFFFF"
-                stroke={isNext ? '#FBBF24' : '#0E5C5C'}
+                stroke={isNext ? '#FBBF24' : color}
                 strokeWidth={isNext ? 4 : 3}
               />
             );

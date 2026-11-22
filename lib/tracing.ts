@@ -20,7 +20,7 @@ export const REQUIRED_COVERAGE = 0.7;
 export const MIN_MOVES = 8;
 
 export type Point = { x: number; y: number };
-export type Segment = { x1: number; y1: number; x2: number; y2: number };
+export type Segment = { x1: number; y1: number; x2: number; y2: number; strokeId?: number };
 export type Dot = Point & { id: number; endpoint?: boolean };
 
 /** How close the finger must be to count a specific checkpoint as reached. */
@@ -87,6 +87,41 @@ export function markCoveredSegments(
   return shortest;
 }
 
+/**
+ * Like markCoveredSegments, but only colours the stroke the finger is actually
+ * on. Without this, two nearby strokes (e.g. the legs of "A" near the apex)
+ * would both light up from a single touch.
+ */
+export function markStrokeCoverage(
+  x: number,
+  y: number,
+  segments: Segment[] | undefined,
+  tolerance: number,
+  covered: Set<number>
+): number {
+  if (!segments || segments.length === 0) return Number.POSITIVE_INFINITY;
+
+  let nearestStrokeId: number | undefined;
+  let nearestDistance = Number.POSITIVE_INFINITY;
+  for (const seg of segments) {
+    const distance = distanceToSegment(x, y, seg.x1, seg.y1, seg.x2, seg.y2);
+    if (distance < nearestDistance) {
+      nearestDistance = distance;
+      nearestStrokeId = seg.strokeId;
+    }
+  }
+
+  let shortest = Number.POSITIVE_INFINITY;
+  for (let i = 0; i < segments.length; i++) {
+    const seg = segments[i];
+    if (nearestStrokeId !== undefined && seg.strokeId !== nearestStrokeId) continue;
+    const distance = distanceToSegment(x, y, seg.x1, seg.y1, seg.x2, seg.y2);
+    if (distance <= tolerance) covered.add(i);
+    if (distance < shortest) shortest = distance;
+  }
+  return shortest;
+}
+
 /** Every guide dot must be reached before the reward unlocks. */
 export function requiredHits(totalPoints: number): number {
   return totalPoints;
@@ -115,6 +150,8 @@ export function samplePolyline(points: Point[], spacing = 4): Point[] {
 export type TraceAnalysis = {
   hits: number[];
   covered: Set<number>;
+  /** Segments from the stroke actually traced — used for the coloured fill. */
+  fillCovered: Set<number>;
   moves: number;
   offPath: number;
 };
@@ -132,6 +169,7 @@ export function analyseStrokes(
 ): TraceAnalysis {
   const hits = new Set<number>();
   const covered = new Set<number>();
+  const fillCovered = new Set<number>();
   let moves = 0;
   let offPath = 0;
 
@@ -154,10 +192,11 @@ export function analyseStrokes(
           if (distance <= tolerance) covered.add(i);
           if (distance < nearest) nearest = distance;
         }
+        markStrokeCoverage(sample.x, sample.y, segments, tolerance, fillCovered);
       }
       if (nearest > tolerance) offPath++;
     }
   }
 
-  return { hits: [...hits], covered, moves, offPath };
+  return { hits: [...hits], covered, fillCovered, moves, offPath };
 }

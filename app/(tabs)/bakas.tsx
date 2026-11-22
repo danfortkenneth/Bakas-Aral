@@ -11,7 +11,7 @@ import SpeakingAvatar, { type AvatarLine } from '../../components/SpeakingAvatar
 import { db } from '../../lib/firebase';
 import { collection, addDoc } from 'firebase/firestore';
 import { useLanguage } from '../_layout';
-import { FINISH_PHRASES, PHONETIC_PHRASES, getCharacter } from '../../constants/characterLibrary';
+import { FINISH_PHRASES, LETTER_COLORS, PHONETIC_PHRASES, getCharacter } from '../../constants/characterLibrary';
 import {
   ENDPOINT_TOLERANCE,
   MIN_MOVES,
@@ -21,6 +21,7 @@ import {
   dotTolerance,
   fitTracingCanvas,
   markCoveredSegments,
+  markStrokeCoverage,
   requiredHits,
 } from '../../lib/tracing';
 
@@ -106,6 +107,8 @@ export default function BakasScreen() {
   const errorMoves = useRef<number>(0);
   const finishedRef = useRef<boolean>(false);
   const coveredSegments = useRef<Set<number>>(new Set());
+  /** Only segments of the stroke under the finger — drives the violet fill. */
+  const fillSegments = useRef<Set<number>>(new Set());
   /** Raw points of every stroke drawn in this attempt — powers undo. */
   const strokePoints = useRef<{ x: number; y: number }[][]>([]);
 
@@ -115,7 +118,7 @@ export default function BakasScreen() {
    * little inside the generous tracing tolerance.
    */
   const computeFillPaths = () => {
-    const covered = coveredSegments.current;
+    const covered = fillSegments.current;
     const segments = charData.segments;
     const result: string[] = [];
     let current = '';
@@ -185,6 +188,7 @@ export default function BakasScreen() {
     );
     hitPoints.current = analysis.hits;
     coveredSegments.current = analysis.covered;
+  fillSegments.current = analysis.fillCovered;
     totalMoves.current = analysis.moves;
     errorMoves.current = analysis.offPath;
     setHitIds(analysis.hits);
@@ -205,6 +209,7 @@ export default function BakasScreen() {
     errorMoves.current = 0;
     finishedRef.current = false;
     coveredSegments.current.clear();
+  fillSegments.current.clear();
     strokePoints.current = [];
     setFillPaths([]);
     const first = charData.points[0];
@@ -413,7 +418,6 @@ export default function BakasScreen() {
     }
 
     // 2. Track coverage + check the finger is still inside the writing lane.
-    const coveredBefore = coveredSegments.current.size;
     const distance = markCoveredSegments(
       x,
       y,
@@ -421,7 +425,9 @@ export default function BakasScreen() {
       TRACE_TOLERANCE,
       coveredSegments.current
     );
-    if (coveredSegments.current.size !== coveredBefore) computeFillPaths();
+    const fillBefore = fillSegments.current.size;
+    markStrokeCoverage(x, y, charData.segments, TRACE_TOLERANCE, fillSegments.current);
+    if (fillSegments.current.size !== fillBefore) computeFillPaths();
     setBeePos({ x, y });
 
     if (distance <= TRACE_TOLERANCE) {
@@ -589,6 +595,7 @@ export default function BakasScreen() {
             isFinished={isFinished}
             isOnPath={isOnPath}
             beePos={beePos}
+            color={LETTER_COLORS[selectedChar] ?? '#0E5C5C'}
             panHandlers={panResponder.panHandlers}
           />
           <SpeakingAvatar
