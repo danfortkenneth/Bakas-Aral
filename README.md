@@ -155,22 +155,23 @@ screen. A child can fix a wrong stroke without starting over.
 
 - a firm `Heavy` impact when a stroke starts,
 - a `Medium` impact plus a quick double tick at every guide dot,
-- a light tick roughly every 38 viewBox units while the finger stays on the line,
+- a light **curve-aware texture**: ticks get denser on turns and are capped at
+  ~10/second (so the child can feel the shape of the stroke),
 - a two-pulse "stroke done" pattern when the finger lifts after a real stroke,
 - a throttled `Warning` buzz when the finger leaves the line, and a distinct soft
   confirmation when it comes back,
-- a `Success` celebration when the character is finished.
+- a `Success` celebration when the character is finished, followed by a short
+  **replay of the drawn stroke rhythm** so the letter can be remembered by touch.
 
 Only real strokes count toward completion — isolated dot taps are ignored by
 `analyseStrokes()` (a stroke needs ≥6 samples and ≥60 viewBox units), and every
 stroke of the character must be traced before the reward unlocks.
 
-Finishing a character unlocks the sticker for that anchor word. Instead of a
-full-screen card, the reward is now a **compact sticker badge** near the top
-(artwork, word, accuracy, three stars) plus a small **Retry / Continue** bar above
-the tab bar. After ~400 ms it fades/springs in and the stars pop one by one; it
-stays non-interactive until visible. The avatar says the anchor line at the same
-time, so the finished letter stays visible.
+Finishing a character shows a clean **star-only reward**: a small frosted pill
+with the three stars popping one by one (large centre star), fading/springing in
+after ~400 ms. No anchor artwork, word label, accuracy text, or success mp3 — the
+avatar says the anchor line instead, and a **Retry / Continue** bar sits above
+the tab bar so the finished letter stays visible.
 
 ## Device support
 

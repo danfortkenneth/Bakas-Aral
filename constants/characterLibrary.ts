@@ -17,21 +17,13 @@ export type CharacterEntry = TraceCharacter & {
   word: string;
   /** Optional artwork — only A and B ship with images today. */
   image?: number;
-  /** Optional success sound for the anchor word. */
-  wordSound?: number;
 };
 
-type CharacterAssets = Pick<CharacterEntry, 'image' | 'wordSound'>;
+type CharacterAssets = Pick<CharacterEntry, 'image'>;
 
 const CHARACTER_ASSETS: Record<string, CharacterAssets> = {
-  A: {
-    image: require('../assets/images/Atis.png'),
-    wordSound: require('../assets/sounds/Atis_suc.mp3'),
-  },
-  B: {
-    image: require('../assets/images/Bahay.png'),
-    wordSound: require('../assets/sounds/Bahay_suc.mp3'),
-  },
+  A: { image: require('../assets/images/Atis.png') },
+  B: { image: require('../assets/images/Bahay.png') },
 };
 
 /** Letters in teaching order (focus build). */

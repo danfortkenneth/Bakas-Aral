@@ -14,6 +14,10 @@ const STORAGE_KEY = '@bakas_haptics_enabled';
 let enabled = true;
 let lastOffPath = 0;
 let lastBackOnPath = 0;
+let lastTickPoint: { x: number; y: number } | null = null;
+let lastTickDirection: { x: number; y: number } | null = null;
+let lastTickTime = 0;
+let replayTimers: ReturnType<typeof setTimeout>[] = [];
 
 /** Load the parent's saved choice once at startup. */
 export async function loadHapticsSetting(): Promise<void> {
@@ -31,6 +35,10 @@ export function areHapticsEnabled(): boolean {
 
 export async function setHapticsEnabled(value: boolean): Promise<void> {
   enabled = value;
+  if (!value) {
+    replayTimers.forEach(clearTimeout);
+    replayTimers = [];
+  }
   try {
     await AsyncStorage.setItem(STORAGE_KEY, value ? 'true' : 'false');
   } catch {
@@ -38,16 +46,18 @@ export async function setHapticsEnabled(value: boolean): Promise<void> {
   }
 }
 
-const later = (delay: number, action: () => void) => {
+const later = (delay: number, action: () => void) =>
   setTimeout(() => {
     if (enabled) action();
   }, delay);
-};
 
 export const haptics = {
   /** Finger touched down: a firm "this is where you start". */
   startStroke() {
     if (!enabled) return;
+    lastTickPoint = null;
+    lastTickDirection = null;
+    lastTickTime = Date.now();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
   },
 
@@ -84,10 +94,51 @@ export const haptics = {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   },
 
-  /** Continuous light tick while the finger follows the line. */
-  tick() {
+  /** Continuous texture: denser ticks on curves, capped at ~10/second. */
+  textureTick(x: number, y: number) {
     if (!enabled) return;
+    const now = Date.now();
+    if (now - lastTickTime < 100) return;
+
+    const last = lastTickPoint;
+    const moved = last ? Math.hypot(x - last.x, y - last.y) : Number.POSITIVE_INFINITY;
+    const dx = last ? x - last.x : 0;
+    const dy = last ? y - last.y : 0;
+    const distance = Math.max(1, Math.hypot(dx, dy));
+    const direction = { x: dx / distance, y: dy / distance };
+
+    let spacing = 38;
+    if (last && lastTickDirection) {
+      const turn = 1 - Math.max(-1, Math.min(1, direction.x * lastTickDirection.x + direction.y * lastTickDirection.y));
+      spacing = 38 - Math.min(18, turn * 45);
+    }
+    if (moved < spacing) return;
+
+    lastTickPoint = { x, y };
+    lastTickDirection = direction;
+    lastTickTime = now;
     Haptics.selectionAsync();
+  },
+
+  /**
+   * Replays the rhythm of the strokes the child just drew, so the finished
+   * letter can be remembered through touch as well as sight.
+   */
+  replayStrokes(strokes: { x: number; y: number }[][]) {
+    replayTimers.forEach(clearTimeout);
+    replayTimers = [];
+    if (!enabled || strokes.length === 0) return;
+
+    let at = 450;
+    for (const stroke of strokes) {
+      if (strokeLength(stroke) < 60) continue;
+      const count = Math.max(2, Math.min(7, Math.round(strokeLength(stroke) / 80)));
+      replayTimers.push(later(at, () => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)));
+      for (let i = 1; i <= count; i++) {
+        replayTimers.push(later(at + i * 110, () => Haptics.selectionAsync()));
+      }
+      at += count * 110 + 170;
+    }
   },
 
   /** Undo: a light acknowledgement. */

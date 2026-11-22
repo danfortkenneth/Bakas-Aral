@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { StyleSheet, View, PanResponder, TouchableOpacity, Text, Image, Animated, Dimensions, ActivityIndicator } from 'react-native';
+import { StyleSheet, View, PanResponder, TouchableOpacity, Text, Animated, Dimensions, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { createAudioPlayer } from 'expo-audio';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -67,7 +67,7 @@ export default function BakasScreen() {
   const [isOnPath, setIsOnPath] = useState<boolean>(true);
   const [isFinished, setIsFinished] = useState<boolean>(false);
   const [saving, setSaving] = useState<boolean>(false);
-  const [accuracy, setAccuracy] = useState<number>(100); 
+
   
   const [earnedStars, setEarnedStars] = useState<number>(3);
   
@@ -151,25 +151,14 @@ export default function BakasScreen() {
   };
 
   // Haptics: the tactile "texture" of the stroke is a core part of the game.
-  const lastHapticPoint = useRef<{ x: number; y: number } | null>(null);
-  const lastHapticTime = useRef<number>(0);
   const lastWarnTime = useRef<number>(0);
 
-  const successPlayerRef = useRef<any>(null);
   const errorPlayerRef = useRef<any>(null);
   const lastErrorSoundTime = useRef<number>(0);
   const onPathRef = useRef(true);
 
-  /** Light tick every few centimetres so the child can feel the stroke. */
-  const pulseHaptic = (x: number, y: number) => {
-    const now = Date.now();
-    const last = lastHapticPoint.current;
-    const moved = last ? Math.hypot(x - last.x, y - last.y) : Number.POSITIVE_INFINITY;
-    if (moved < 38 || now - lastHapticTime.current < 45) return;
-    lastHapticPoint.current = { x, y };
-    lastHapticTime.current = now;
-    haptics.tick();
-  };
+  /** Continuous texture is handled centrally, including curve-aware spacing. */
+  const pulseHaptic = (x: number, y: number) => haptics.textureTick(x, y);
 
   /** Warn at most a few times per second so the phone does not buzz nonstop. */
   const warnHaptic = () => {
@@ -217,8 +206,6 @@ export default function BakasScreen() {
     setFillPaths([]);
     const first = charData.points[0];
     setBeePos(first ? { x: first.x, y: first.y } : { x: 200, y: 300 });
-    lastHapticPoint.current = null;
-    lastHapticTime.current = 0;
     lastWarnTime.current = 0;
     fadeAnim.setValue(0);
     cardScale.setValue(0.86);
@@ -226,7 +213,6 @@ export default function BakasScreen() {
     if (rewardTimer.current) clearTimeout(rewardTimer.current);
     rewardTimer.current = null;
     setRewardReady(false);
-    setAccuracy(100);
     setAvatarLine(instructionLine());
     setAvatarTrigger((value) => value + 1);
   };
@@ -238,36 +224,16 @@ export default function BakasScreen() {
     setPaths((prev) => prev.slice(0, -1));
     rebuildProgress();
     setIsOnPath(true);
-    lastHapticPoint.current = null;
     haptics.undo();
   };
 
   useEffect(() => {
-    try {
-      if (successPlayerRef.current) {
-        successPlayerRef.current.remove();
-        successPlayerRef.current = null;
-      }
-
-      if (charData.wordSound) {
-        successPlayerRef.current = createAudioPlayer(charData.wordSound);
-      }
-    } catch (e) {
-      console.log("Error initializing character audio players:", e);
-    }
-
     // Resetting tracing state on character change is intentional.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    handleReset(); 
-
-    return () => {
-      try {
-        if (successPlayerRef.current) successPlayerRef.current.remove();
-      } catch {}
-    };
+    handleReset();
     // handleReset only touches stable setters/refs, so it is safe to omit.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedChar, charData.wordSound]);
+  }, [selectedChar]);
 
   useEffect(() => {
     try {
@@ -357,20 +323,13 @@ export default function BakasScreen() {
     if (calculatedScore >= 90) stars = 3;
     else if (calculatedScore >= 75) stars = 2;
 
-    setAccuracy(calculatedScore);
     setEarnedStars(stars);
     setIsFinished(true);
     setIsOnPath(true);
     setAvatarLine(FINISH_PHRASES[selectedChar] ?? successLine());
     setAvatarTrigger((value) => value + 1);
 
-    if (successPlayerRef.current) {
-      try {
-        successPlayerRef.current.seekTo(0);
-        successPlayerRef.current.play();
-      } catch {}
-    }
-
+    haptics.replayStrokes(strokePoints.current);
     haptics.finished();
     saveSessionToDatabase(calculatedScore);
 
@@ -507,8 +466,6 @@ export default function BakasScreen() {
         if (strokePoints.current.length === 0) handlersRef.current.announcePhonetic();
         strokePoints.current.push([{ x: svgX, y: svgY }]);
         haptics.startStroke();
-        lastHapticPoint.current = { x: svgX, y: svgY };
-        lastHapticTime.current = Date.now();
         setPaths((prev) => [...prev, `M${svgX.toFixed(1)},${svgY.toFixed(1)}`]);
         handlersRef.current.registerTouch(svgX, svgY);
       },
@@ -636,37 +593,21 @@ export default function BakasScreen() {
 
         {isFinished && (
           <View style={[styles.rewardOverlay, { paddingBottom: TAB_BAR_SPACE }]} pointerEvents="box-none">
-            <View style={styles.compactStickerWrap}>
+            <View style={styles.starRewardWrap}>
               <Animated.View
-                pointerEvents={rewardReady ? 'auto' : 'none'}
-                style={[styles.compactSticker, { opacity: fadeAnim, transform: [{ scale: cardScale }] }]}
+                pointerEvents="none"
+                style={[styles.starReward, { opacity: fadeAnim, transform: [{ scale: cardScale }] }]}
               >
-                {charData.image ? (
-                  <Image source={charData.image} style={styles.compactStickerImage} resizeMode="contain" />
-                ) : (
-                  <View style={styles.compactStickerFallback}>
-                    <Text style={styles.compactStickerChar}>{selectedChar}</Text>
-                  </View>
-                )}
-                <View style={styles.compactStickerInfo}>
-                  <Text style={styles.compactStickerTitle} numberOfLines={1}>
-                    {selectedChar} - {charData.word}
-                  </Text>
-                  <Text style={styles.compactStickerAccuracy}>
-                    {lang === 'ph' ? `Katumpakan: ${accuracy}%` : `Accuracy: ${accuracy}%`}
-                  </Text>
-                  <View style={styles.compactStarsRow}>
-                    {starAnims.map((anim, index) => (
-                      <Animated.View key={index} style={{ transform: [{ scale: anim }] }}>
-                        <Ionicons
-                          name="star"
-                          size={16}
-                          color={earnedStars > index ? '#FBBF24' : '#E5E7EB'}
-                        />
-                      </Animated.View>
-                    ))}
-                  </View>
-                </View>
+                {starAnims.map((anim, index) => (
+                  <Animated.View key={index} style={{ transform: [{ scale: anim }] }}>
+                    <Ionicons
+                      name={earnedStars > index ? 'star' : 'star-outline'}
+                      size={index === 1 ? 46 : 36}
+                      color={earnedStars > index ? '#FBBF24' : '#E5E7EB'}
+                      style={index === 1 ? { marginTop: -10 } : undefined}
+                    />
+                  </Animated.View>
+                ))}
               </Animated.View>
             </View>
 
@@ -719,15 +660,8 @@ const styles = StyleSheet.create({
   statusText: { fontWeight: '900', fontSize: normalize(12), color: '#333', letterSpacing: 0.5, textAlign: 'center' },
   canvasArea: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: '4%', paddingVertical: 6 },
   avatarSide: { left: -2, bottom: '12%' },
-  compactStickerWrap: { position: 'absolute', top: 130, left: 0, right: 0, alignItems: 'center' },
-  compactSticker: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: 'white', borderRadius: 22, borderWidth: 2, borderColor: '#FDE68A', paddingHorizontal: 12, paddingVertical: 8, maxWidth: '86%', elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.12, shadowRadius: 8 },
-  compactStickerImage: { width: 48, height: 48, borderRadius: 12 },
-  compactStickerFallback: { width: 48, height: 48, borderRadius: 12, backgroundColor: '#DCFCE7', alignItems: 'center', justifyContent: 'center' },
-  compactStickerChar: { fontSize: 24, fontWeight: '900', color: '#16A34A' },
-  compactStickerInfo: { flexShrink: 1 },
-  compactStickerTitle: { fontSize: normalize(12), fontWeight: '900', color: '#7C4A03' },
-  compactStickerAccuracy: { fontSize: normalize(10), color: '#15803D', fontWeight: '800', marginTop: 2 },
-  compactStarsRow: { flexDirection: 'row', gap: 4, marginTop: 3 },
+  starRewardWrap: { position: 'absolute', top: 130, left: 0, right: 0, alignItems: 'center' },
+  starReward: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: 'rgba(255,255,255,0.92)', borderRadius: 30, borderWidth: 2, borderColor: '#FDE68A', paddingHorizontal: 22, paddingVertical: 10, elevation: 10, shadowColor: '#F59E0B', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.22, shadowRadius: 14 },
   compactActions: { position: 'absolute', left: '5%', right: '5%', bottom: 8, flexDirection: 'row', gap: 10 },
   compactBtn: { flex: 1, backgroundColor: '#F77F67', height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center', flexDirection: 'row' },
   compactBtnSecondary: { backgroundColor: '#F3F4F6' },
