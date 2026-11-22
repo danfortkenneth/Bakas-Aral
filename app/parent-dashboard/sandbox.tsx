@@ -14,13 +14,14 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { createAudioPlayer } from 'expo-audio';
-import Svg, { Path, Circle } from 'react-native-svg';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useLanguage } from '../_layout';
 import { getCharacter } from '../../constants/characterLibrary';
 import { normalizeFor, useResponsive } from '../../lib/responsive';
+import TraceCanvas from '../../components/TraceCanvas';
+import SpeakingAvatar, { type AvatarLine } from '../../components/SpeakingAvatar';
 import {
   ENDPOINT_TOLERANCE,
   MIN_MOVES,
@@ -42,6 +43,7 @@ const isTablet = Math.min(INITIAL_WIDTH, INITIAL_HEIGHT) >= 600;
 
 /** Header content height below the top safe-area inset. */
 const HEADER_SPACE = 88;
+const r = (value: number) => Math.round(value * 10) / 10;
 
 export default function SandboxScreen() {
   const router = useRouter();
@@ -49,7 +51,7 @@ export default function SandboxScreen() {
   const params = useLocalSearchParams();
 
   const insets = useSafeAreaInsets();
-  const { width: windowWidth, height: windowHeight } = useResponsive();
+  const { width: windowWidth, height: windowHeight, isTablet: isTabletDevice } = useResponsive();
 
   // The canvas fills the space under the header, kept at the character's 2:3
   // ratio so touch coordinates map 1:1 to the 400×600 viewBox on every device.
@@ -80,6 +82,29 @@ export default function SandboxScreen() {
   const totalPointsCount = charData.points.length;
   const hitsNeeded = requiredHits(totalPointsCount);
   const [hitIds, setHitIds] = useState<number[]>([]);
+  /** Covered portions of the guide line, drawn as the purple traced fill. */
+  const [fillPaths, setFillPaths] = useState<string[]>([]);
+  /** Bee position in viewBox coordinates. */
+  const [beePos, setBeePos] = useState<{ x: number; y: number }>(() => {
+    const first = charData.points[0];
+    return first ? { x: first.x, y: first.y } : { x: 200, y: 300 };
+  });
+  /** What the side avatar says and when to say it again. */
+  const [avatarLine, setAvatarLine] = useState<AvatarLine>(() => ({
+    ph: `Sundan ang mga puting tuldok para mabuo ang ${selectedChar}. Simulan sa bee!`,
+    en: `Follow the white dots to make ${selectedChar}. Start at the bee!`,
+  }));
+  const [avatarTrigger, setAvatarTrigger] = useState(0);
+
+  /** Lines are rebuilt from the current character so the avatar stays in sync. */
+  const instructionLine = (): AvatarLine => ({
+    ph: `Sundan ang mga puting tuldok para mabuo ang ${selectedChar}. Simulan sa bee!`,
+    en: `Follow the white dots to make ${selectedChar}. Start at the bee!`,
+  });
+  const successLine = (): AvatarLine => ({
+    ph: `Ang galing, ${studentName}! Tapos na ang ${selectedChar}. Narito ang sticker mo!`,
+    en: `Great job, ${studentName}! You finished ${selectedChar}. Here is your sticker!`,
+  });
   const [fadeAnim] = useState(() => new Animated.Value(0));
   const [cardScale] = useState(() => new Animated.Value(0.86));
   const [starAnims] = useState(() => [0, 1, 2].map(() => new Animated.Value(0)));
@@ -92,6 +117,43 @@ export default function SandboxScreen() {
   const coveredSegments = useRef<Set<number>>(new Set());
   /** Raw points of every stroke drawn in this attempt — powers undo. */
   const strokePoints = useRef<{ x: number; y: number }[][]>([]);
+
+  /**
+   * Builds SVG sub-paths out of the covered guide segments so the purple fill
+   * always follows the letter exactly, even when a child's finger wanders a
+   * little inside the generous tracing tolerance.
+   */
+  const computeFillPaths = () => {
+    const covered = coveredSegments.current;
+    const segments = charData.segments;
+    const result: string[] = [];
+    let current = '';
+    let previousEnd: { x: number; y: number } | null = null;
+
+    for (let i = 0; i < segments.length; i++) {
+      const segment = segments[i];
+      if (!covered.has(i)) {
+        if (current) result.push(current);
+        current = '';
+        previousEnd = null;
+        continue;
+      }
+
+      const breaksStroke =
+        !current ||
+        !previousEnd ||
+        Math.hypot(segment.x1 - previousEnd.x, segment.y1 - previousEnd.y) > 1;
+
+      if (breaksStroke) {
+        if (current) result.push(current);
+        current = `M${r(segment.x1)},${r(segment.y1)}`;
+      }
+      current += ` L${r(segment.x2)},${r(segment.y2)}`;
+      previousEnd = { x: segment.x2, y: segment.y2 };
+    }
+    if (current) result.push(current);
+    setFillPaths(result);
+  };
 
   // Haptics: the tactile "texture" of the stroke is a core part of the game.
   const lastHapticPoint = useRef<{ x: number; y: number } | null>(null);
@@ -136,6 +198,9 @@ export default function SandboxScreen() {
     totalMoves.current = analysis.moves;
     errorMoves.current = analysis.offPath;
     setHitIds(analysis.hits);
+    computeFillPaths();
+    const next = charData.points.find((point: any) => !analysis.hits.includes(point.id));
+    setBeePos(next ? { x: next.x, y: next.y } : { x: 200, y: 300 });
   };
 
   const handleReset = () => {
@@ -149,6 +214,9 @@ export default function SandboxScreen() {
     finishedRef.current = false;
     coveredSegments.current.clear();
     strokePoints.current = [];
+    setFillPaths([]);
+    const first = charData.points[0];
+    setBeePos(first ? { x: first.x, y: first.y } : { x: 200, y: 300 });
     lastHapticPoint.current = null;
     lastHapticTime.current = 0;
     lastWarnTime.current = 0;
@@ -159,6 +227,8 @@ export default function SandboxScreen() {
     rewardTimer.current = null;
     setRewardReady(false);
     setAccuracy(100);
+    setAvatarLine(instructionLine());
+    setAvatarTrigger((value) => value + 1);
   };
 
   /** Removes the last stroke and rebuilds the progress from what remains. */
@@ -289,6 +359,8 @@ export default function SandboxScreen() {
     setEarnedStars(stars);
     setIsFinished(true);
     setIsOnPath(true);
+    setAvatarLine(successLine());
+    setAvatarTrigger((value) => value + 1);
 
     if (phoneticPlayerRef.current) {
       try { phoneticPlayerRef.current.pause(); } catch {}
@@ -367,6 +439,7 @@ export default function SandboxScreen() {
     }
 
     // 2. Track coverage + check the finger is still inside the writing lane.
+    const coveredBefore = coveredSegments.current.size;
     const distance = markCoveredSegments(
       x,
       y,
@@ -374,6 +447,8 @@ export default function SandboxScreen() {
       TRACE_TOLERANCE,
       coveredSegments.current
     );
+    if (coveredSegments.current.size !== coveredBefore) computeFillPaths();
+    setBeePos({ x, y });
 
     if (distance <= TRACE_TOLERANCE) {
       setIsOnPath(true);
@@ -520,47 +595,25 @@ export default function SandboxScreen() {
         </SafeAreaView>
 
         <View style={styles.canvasArea}>
-          <View
-            style={[styles.svgWrapper, { width: canvas.width, height: canvas.height }]}
-            {...panResponder.panHandlers}
-          >
-            <Svg width={canvas.width} height={canvas.height} viewBox="0 0 400 600" style={styles.svgBorderContainer}>
-              <Path d={charData.path} fill="none" stroke="#EAEAEA" strokeWidth={80} strokeLinecap="round" strokeLinejoin="round" />
-              <Path 
-                d={charData.path} 
-                fill="none" 
-                stroke={isFinished ? "#4ADE80" : (isOnPath ? "#FED7AA" : "#FCA5A5")} 
-                strokeWidth={65} 
-                strokeLinecap="round" 
-                strokeLinejoin="round"
-              />
-              {paths.map((strokePath, index) => (
-                <Path 
-                  key={index}
-                  d={strokePath} 
-                  fill="none" 
-                  stroke={isOnPath ? "#F77F67" : "#EF4444"} 
-                  strokeWidth={12} 
-                  strokeLinecap="round" 
-                  strokeLinejoin="round" 
-                />
-              ))}
-              {!isFinished && charData.points.map((pt: any, index: number) => {
-                const isHit = hitIds.includes(pt.id);
-                const isStart = index === 0 && hitIds.length === 0;
-                return (
-                  <Circle
-                    key={pt.id}
-                    cx={pt.x}
-                    cy={pt.y}
-                    r={isHit ? 9 : (isStart ? 16 : 11)}
-                    fill={isHit ? '#22C55E' : (isStart ? '#2563EB' : '#EF4444')}
-                    opacity={isHit ? 0.45 : 1}
-                  />
-                );
-              })}
-            </Svg>
-          </View>
+          <TraceCanvas
+            width={canvas.width}
+            height={canvas.height}
+            path={charData.path}
+            points={charData.points}
+            fillPaths={fillPaths}
+            hitIds={hitIds}
+            isFinished={isFinished}
+            isOnPath={isOnPath}
+            beePos={beePos}
+            panHandlers={panResponder.panHandlers}
+          />
+          <SpeakingAvatar
+            line={avatarLine}
+            lang={lang}
+            trigger={avatarTrigger}
+            size={isTabletDevice ? 96 : 56}
+            style={styles.avatarSide}
+          />
         </View>
 
         {isFinished && (
@@ -678,8 +731,7 @@ const styles = StyleSheet.create({
   progressLabel: { marginLeft: 10, fontSize: normalize(11), fontWeight: '900', color: '#92400E' },
   statusText: { fontWeight: '900', fontSize: normalize(12), color: '#333', letterSpacing: 0.5, textAlign: 'center' },
   canvasArea: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: '4%', paddingVertical: 6 },
-  svgWrapper: { justifyContent: 'center', alignItems: 'center' },
-  svgBorderContainer: { backgroundColor: 'white', borderRadius: 30, elevation: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.05, shadowRadius: 10 },
+  avatarSide: { left: -2, bottom: '12%' },
   
   rewardOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center', zIndex: 30 },
   successContent: { backgroundColor: 'white', padding: 25, paddingTop: 22, borderRadius: 35, borderWidth: 3, borderColor: '#FDE68A', alignItems: 'center', elevation: 25, shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.18, shadowRadius: 20, width: isTablet ? 450 : '88%', maxHeight: '88%', flexShrink: 1 },

@@ -6,6 +6,7 @@ import { db, auth } from '../../lib/firebase';
 import { collection, query, where, onSnapshot, doc } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
 import { scaleFor } from '../../lib/responsive';
+import { ALL_CHARACTERS } from '../../constants/characterLibrary';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const scale = scaleFor(SCREEN_WIDTH);
@@ -20,11 +21,7 @@ interface DayActivity {
   count: number;
 }
 
-const AVAILABLE_ITEMS = [
-  'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M',
-  'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z',
-  '0', '1', '2', '3', '4', '5', '6', '7', '8', '9'
-];
+const AVAILABLE_ITEMS = ALL_CHARACTERS;
 
 export default function ProgressScreen() {
   const { lang } = useLanguage();

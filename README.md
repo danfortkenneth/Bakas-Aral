@@ -92,8 +92,8 @@ services/                # Data services
 
 ## Tracing characters
 
-All 36 characters (A–Z and 0–9) live in `constants/traceableData.ts` as stroke
-definitions. `buildCharacter()` smooths each stroke (Catmull-Rom) and derives the
+The geometry for all 36 characters (A–Z and 0–9) lives in
+`constants/traceableData.ts`. `buildCharacter()` smooths each stroke (Catmull-Rom) and derives the
 SVG `path`, the hit `points` spread by arc length, and the `segments` used for
 "is the finger on the stroke?" checks — all inside the 400×600 viewBox used by the
 tracing screens.
@@ -102,8 +102,32 @@ tracing screens.
 image, sounds). Only **A** and **B** currently ship with artwork/audio; every other
 character falls back to a text badge and silence.
 
+> **Focus build:** only **A, B, C** and the numbers **1, 2** are enabled right now.
+> The active set is defined once by `LETTERS` / `NUMBERS` in `characterLibrary.ts`;
+> the home grid, tracing screens and both progress screens all read from it. The
+> full geometry is still in `traceableData.ts`, so restoring the other characters
+> only means extending those two lists.
+
 To add artwork or audio for another character, drop the files in `assets/` and add
 an entry to `CHARACTER_ASSETS` — no screen changes needed.
+
+### Tracing visuals
+
+`components/TraceCanvas.tsx` draws the play area shared by both tracing screens:
+a dark-teal character with a white sticker outline, white checkpoint dots, and a
+purple patterned fill that grows **along the covered guide segments** (so it
+stays inside the letter even when a child's finger wanders). A bee follows the
+finger and a beehive marks the end of the current stroke — the friendly cue that
+replaces direction arrows. Game rules are unchanged: dots, coverage, haptics,
+undo and the sticker reward are still driven by the screens.
+
+A side **speaking avatar** (`components/SpeakingAvatar.tsx`) gives the child a
+short instruction and a success line. It uses the device's own text-to-speech via
+`expo-speech` (Filipino voice when available, English fallback otherwise), so it
+works offline and needs no API key. The avatar picture lives in
+`assets/images/student-avatar.png`; the higher pitch (1.5) makes the device voice
+sound more childlike. Swap in generated child-voice audio later if you want a
+more natural read. Game rules are unchanged.
 
 ### Completion and reward
 

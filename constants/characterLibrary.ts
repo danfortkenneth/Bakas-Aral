@@ -1,10 +1,14 @@
 /**
- * Single source of truth for every traceable character (A–Z and 0–9).
+ * Single source of truth for the characters currently in the game.
  *
  * Geometry (path / points / segments) comes from `traceableData.ts`.
  * Words, images and sounds are layered on top as optional assets — only the
  * characters that actually have files in `assets/` get them, so the tracing
  * screens must treat image/audio as optional.
+ *
+ * For the current focus build only A, B, C and the numbers 1 and 2 are enabled.
+ * To bring back the full alphabet, restore the lists in `LETTERS` / `NUMBERS`
+ * below and the original ranges in `traceableData.ts`.
  */
 import { ANCHOR_WORDS, TRACEABLE_DATA, type TraceCharacter } from './traceableData';
 
@@ -34,25 +38,28 @@ const CHARACTER_ASSETS: Record<string, CharacterAssets> = {
   },
 };
 
-export const CHARACTER_LIBRARY: Record<string, CharacterEntry> = Object.fromEntries(
-  Object.entries(TRACEABLE_DATA).map(([character, geometry]) => [
-    character,
-    {
-      word: ANCHOR_WORDS[character] ?? character,
-      ...geometry,
-      ...(CHARACTER_ASSETS[character] ?? {}),
-    },
-  ])
-);
+/** Letters in teaching order (focus build). */
+export const LETTERS: string[] = 'ABC'.split('');
 
-/** Letters in teaching order. */
-export const LETTERS: string[] = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+/** Digits in teaching order (focus build). */
+export const NUMBERS: string[] = '12'.split('');
 
-/** Digits in teaching order. */
-export const NUMBERS: string[] = '0123456789'.split('');
-
-/** Every character that has tracing geometry, letters first. */
+/** Every character currently available, letters first. */
 export const ALL_CHARACTERS: string[] = [...LETTERS, ...NUMBERS];
+
+/** Only the active characters are exposed to the screens. */
+export const CHARACTER_LIBRARY: Record<string, CharacterEntry> = Object.fromEntries(
+  Object.entries(TRACEABLE_DATA)
+    .filter(([character]) => ALL_CHARACTERS.includes(character))
+    .map(([character, geometry]) => [
+      character,
+      {
+        word: ANCHOR_WORDS[character] ?? character,
+        ...geometry,
+        ...(CHARACTER_ASSETS[character] ?? {}),
+      },
+    ])
+);
 
 export function getCharacter(character?: string | null): CharacterEntry {
   return CHARACTER_LIBRARY[character ?? ''] ?? CHARACTER_LIBRARY.A;
