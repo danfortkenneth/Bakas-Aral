@@ -2,6 +2,7 @@ import { Stack, useRouter, useSegments } from 'expo-router';
 import { createContext, useState, useContext, useEffect, useRef } from 'react';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { loadHapticsSetting } from '../lib/haptics';
 import { auth, db } from '../lib/firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
 import { doc, onSnapshot } from 'firebase/firestore';
@@ -45,6 +46,10 @@ export default function RootLayout() {
   useEffect(() => {
     langRef.current = lang;
   }, [lang]);
+
+  useEffect(() => {
+    loadHapticsSetting();
+  }, []);
 
   useEffect(() => {
     let unsubscribeUserDoc: (() => void) | null = null;

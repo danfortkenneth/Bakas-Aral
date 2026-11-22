@@ -19,6 +19,20 @@ export const REQUIRED_COVERAGE = 0.7;
 /** Minimum number of move samples so a single tap cannot finish a letter. */
 export const MIN_MOVES = 8;
 
+/** A stroke shorter than this is a tap/dot-poke, not a traced line. */
+export const MIN_STROKE_LENGTH = 60;
+/** A stroke needs this many samples before it counts toward completion. */
+export const MIN_STROKE_MOVES = 6;
+
+/** Length of a polyline in viewBox units. */
+export function strokeLength(points: Point[]): number {
+  let total = 0;
+  for (let i = 1; i < points.length; i++) {
+    total += Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
+  }
+  return total;
+}
+
 export type Point = { x: number; y: number };
 export type Segment = { x1: number; y1: number; x2: number; y2: number; strokeId?: number };
 export type Dot = Point & { id: number; endpoint?: boolean };
@@ -123,6 +137,32 @@ export function markStrokeCoverage(
 }
 
 /** Every guide dot must be reached before the reward unlocks. */
+/**
+ * Completion guard: every stroke of the character must have been traced, not
+ * just enough dots/coverage overall. Short connector strokes (like the crossbar
+ * of "A") sit right beside the long legs, so their dots and segments can be
+ * reached accidentally without ever drawing them.
+ */
+export function allStrokesTraced(
+  segments: Segment[],
+  covered: Set<number>,
+  fraction = 0.5
+): boolean {
+  const ids = [...new Set(segments.map((segment) => segment.strokeId))];
+  if (ids.length === 0) return true;
+
+  return ids.every((id) => {
+    let total = 0;
+    let traced = 0;
+    segments.forEach((segment, index) => {
+      if (segment.strokeId !== id) return;
+      total++;
+      if (covered.has(index)) traced++;
+    });
+    return total === 0 || traced / total >= fraction;
+  });
+}
+
 export function requiredHits(totalPoints: number): number {
   return totalPoints;
 }
@@ -174,7 +214,13 @@ export function analyseStrokes(
   let offPath = 0;
 
   for (const stroke of strokes) {
-    for (const sample of samplePolyline(stroke)) {
+    // Ignore dot-pokes: a real stroke must travel along the letter.
+    const samples = samplePolyline(stroke);
+    if (samples.length < MIN_STROKE_MOVES || strokeLength(stroke) < MIN_STROKE_LENGTH) {
+      continue;
+    }
+
+    for (const sample of samples) {
       moves++;
 
       for (const dot of dots) {

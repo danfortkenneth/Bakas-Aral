@@ -18,6 +18,7 @@ import { useLanguage } from '../_layout';
 import { useRouter } from 'expo-router'; 
 import { auth, db } from '../../lib/firebase';
 import { scaleFor } from '../../lib/responsive';
+import { areHapticsEnabled, setHapticsEnabled } from '../../lib/haptics';
 import { 
   doc, 
   updateDoc, 
@@ -71,6 +72,7 @@ export default function TeacherScreen() {
   const [activeStudentAvatar, setActiveStudentAvatar] = useState<string | null>(null); 
   const [updatingSession, setUpdatingSession] = useState(false);
   const [isAvatarModalOpen, setIsAvatarModalOpen] = useState(false);
+  const [hapticsOn, setHapticsOn] = useState(() => areHapticsEnabled());
 
   const [students, setStudents] = useState<Student[]>([]);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
@@ -464,6 +466,25 @@ export default function TeacherScreen() {
               <Text style={{ fontWeight: 'bold', fontSize: normalize(12) }}>{lang === 'ph' ? 'Palitan ang Wika' : 'Change Language'}</Text>
             </View>
             <Text style={{ fontWeight: '900', color: '#F77F67', fontSize: normalize(12) }}>{lang === 'ph' ? 'FILIPINO' : 'ENGLISH'}</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.settingRow}
+            onPress={() => {
+              const next = !hapticsOn;
+              setHapticsOn(next);
+              setHapticsEnabled(next);
+            }}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Ionicons name="notifications-outline" size={18} color="#333" style={{ marginRight: 8 }} />
+              <Text style={{ fontWeight: 'bold', fontSize: normalize(12) }}>
+                {lang === 'ph' ? 'Haptic Feedback' : 'Haptic Feedback'}
+              </Text>
+            </View>
+            <Text style={{ fontWeight: '900', color: hapticsOn ? '#16A34A' : '#9CA3AF', fontSize: normalize(12) }}>
+              {hapticsOn ? (lang === 'ph' ? 'BUKSAN' : 'ON') : (lang === 'ph' ? 'PATAY' : 'OFF')}
+            </Text>
           </TouchableOpacity>
         </View>
 

@@ -150,12 +150,20 @@ the drawing area at the character's 2:3 aspect ratio so touch coordinates map
 `analyseStrokes()`, so the dots, coverage and accuracy always match what is on
 screen. A child can fix a wrong stroke without starting over.
 
-**Haptics are a core feature**, not decoration:
+**Haptics are a core feature**, not decoration. All patterns live in
+`lib/haptics.ts` and can be turned off from **Teacher → Haptic Feedback**:
 
-- a `Medium` impact every time a guide dot is reached,
-- a light `selectionAsync()` tick roughly every 38 viewBox units while the finger
-  stays on the line, so the stroke can be felt under the finger,
-- a throttled `Warning` buzz (max ~3/second) when the finger leaves the line.
+- a firm `Heavy` impact when a stroke starts,
+- a `Medium` impact plus a quick double tick at every guide dot,
+- a light tick roughly every 38 viewBox units while the finger stays on the line,
+- a two-pulse "stroke done" pattern when the finger lifts after a real stroke,
+- a throttled `Warning` buzz when the finger leaves the line, and a distinct soft
+  confirmation when it comes back,
+- a `Success` celebration when the character is finished.
+
+Only real strokes count toward completion — isolated dot taps are ignored by
+`analyseStrokes()` (a stroke needs ≥6 samples and ≥60 viewBox units), and every
+stroke of the character must be traced before the reward unlocks.
 
 Finishing a character unlocks the sticker for that anchor word. Instead of a
 full-screen card, the reward is now a **compact sticker badge** near the top

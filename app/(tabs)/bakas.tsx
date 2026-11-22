@@ -1,11 +1,11 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { StyleSheet, View, PanResponder, TouchableOpacity, Text, Image, Animated, Dimensions, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import * as Haptics from 'expo-haptics';
 import { createAudioPlayer } from 'expo-audio';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { normalizeFor, useResponsive } from '../../lib/responsive';
+import { haptics } from '../../lib/haptics';
 import TraceCanvas from '../../components/TraceCanvas';
 import SpeakingAvatar, { type AvatarLine } from '../../components/SpeakingAvatar';
 import { db } from '../../lib/firebase';
@@ -17,6 +17,7 @@ import {
   MIN_MOVES,
   REQUIRED_COVERAGE,
   TRACE_TOLERANCE,
+  allStrokesTraced,
   analyseStrokes,
   dotTolerance,
   fitTracingCanvas,
@@ -157,6 +158,7 @@ export default function BakasScreen() {
   const successPlayerRef = useRef<any>(null);
   const errorPlayerRef = useRef<any>(null);
   const lastErrorSoundTime = useRef<number>(0);
+  const onPathRef = useRef(true);
 
   /** Light tick every few centimetres so the child can feel the stroke. */
   const pulseHaptic = (x: number, y: number) => {
@@ -166,7 +168,7 @@ export default function BakasScreen() {
     if (moved < 38 || now - lastHapticTime.current < 45) return;
     lastHapticPoint.current = { x, y };
     lastHapticTime.current = now;
-    Haptics.selectionAsync();
+    haptics.tick();
   };
 
   /** Warn at most a few times per second so the phone does not buzz nonstop. */
@@ -174,7 +176,7 @@ export default function BakasScreen() {
     const now = Date.now();
     if (now - lastWarnTime.current < 350) return;
     lastWarnTime.current = now;
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    haptics.offPath();
   };
 
   /** Recomputes dots/coverage/accuracy from the strokes still on screen. */
@@ -202,6 +204,7 @@ export default function BakasScreen() {
   const handleReset = () => {
     setPaths([]);
     setIsOnPath(true);
+    onPathRef.current = true;
     setIsFinished(false);
     hitPoints.current = [];
     setHitIds([]);
@@ -236,7 +239,7 @@ export default function BakasScreen() {
     rebuildProgress();
     setIsOnPath(true);
     lastHapticPoint.current = null;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    haptics.undo();
   };
 
   useEffect(() => {
@@ -319,20 +322,36 @@ export default function BakasScreen() {
   const tryFinish = () => {
     if (finishedRef.current) return;
 
-    const dotsHit = new Set(hitPoints.current).size;
+    // Replay the strokes from scratch: isolated dot taps are ignored here, so
+    // they cannot satisfy the dots/coverage rules.
+    const analysis = analyseStrokes(
+      strokePoints.current,
+      charData.points,
+      charData.segments,
+      TRACE_TOLERANCE,
+      ENDPOINT_TOLERANCE
+    );
+    hitPoints.current = analysis.hits;
+    coveredSegments.current = analysis.covered;
+    fillSegments.current = analysis.fillCovered;
+    setHitIds(analysis.hits);
+    computeFillPaths();
+
+    const dotsHit = analysis.hits.length;
     const totalSegments = charData.segments.length;
-    const coverage = totalSegments > 0 ? coveredSegments.current.size / totalSegments : 0;
+    const coverage = totalSegments > 0 ? analysis.covered.size / totalSegments : 0;
     if (
       dotsHit < hitsNeeded ||
       coverage < REQUIRED_COVERAGE ||
-      totalMoves.current < MIN_MOVES
+      analysis.moves < MIN_MOVES ||
+      !allStrokesTraced(charData.segments, analysis.fillCovered)
     ) {
       return;
     }
 
     finishedRef.current = true;
 
-    const calculatedScore = Math.max(50, Math.round(((totalMoves.current - errorMoves.current) / totalMoves.current) * 100));
+    const calculatedScore = Math.max(50, Math.round(((analysis.moves - analysis.offPath) / analysis.moves) * 100));
 
     let stars = 1;
     if (calculatedScore >= 90) stars = 3;
@@ -352,7 +371,7 @@ export default function BakasScreen() {
       } catch {}
     }
 
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    haptics.finished();
     saveSessionToDatabase(calculatedScore);
 
     // Reward reveal: a short pause lets the finished letter register first,
@@ -414,7 +433,7 @@ export default function BakasScreen() {
     });
     if (gainedDot) {
       setHitIds([...hitPoints.current]);
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      haptics.checkpoint();
     }
 
     // 2. Track coverage + check the finger is still inside the writing lane.
@@ -431,10 +450,13 @@ export default function BakasScreen() {
     setBeePos({ x, y });
 
     if (distance <= TRACE_TOLERANCE) {
+      if (!onPathRef.current) haptics.backOnPath();
+      onPathRef.current = true;
       setIsOnPath(true);
       // Continuous light ticks let the child feel the stroke under their finger.
       pulseHaptic(x, y);
     } else {
+      onPathRef.current = false;
       setIsOnPath(false);
       errorMoves.current += 1;
       warnHaptic();
@@ -484,6 +506,7 @@ export default function BakasScreen() {
         const svgY = (locationY / canvasRef.current.height) * 600;
         if (strokePoints.current.length === 0) handlersRef.current.announcePhonetic();
         strokePoints.current.push([{ x: svgX, y: svgY }]);
+        haptics.startStroke();
         lastHapticPoint.current = { x: svgX, y: svgY };
         lastHapticTime.current = Date.now();
         setPaths((prev) => [...prev, `M${svgX.toFixed(1)},${svgY.toFixed(1)}`]);
@@ -509,6 +532,8 @@ export default function BakasScreen() {
       },
 
       onPanResponderRelease: () => {
+        const lastStroke = strokePoints.current[strokePoints.current.length - 1];
+        if (!finishedRef.current && lastStroke && haptics.isRealStroke(lastStroke)) haptics.strokeDone();
         setIsOnPath(true);
         handlersRef.current.tryFinish();
       },
@@ -516,6 +541,8 @@ export default function BakasScreen() {
       // Android can steal the gesture (notification, parent scroll). Without this
       // a finished shape would never unlock the reward.
       onPanResponderTerminate: () => {
+        const lastStroke = strokePoints.current[strokePoints.current.length - 1];
+        if (!finishedRef.current && lastStroke && haptics.isRealStroke(lastStroke)) haptics.strokeDone();
         setIsOnPath(true);
         handlersRef.current.tryFinish();
       },

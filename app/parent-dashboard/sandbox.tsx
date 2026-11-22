@@ -11,7 +11,6 @@ import {
   ActivityIndicator
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import * as Haptics from 'expo-haptics';
 import { createAudioPlayer } from 'expo-audio';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -19,6 +18,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useLanguage } from '../_layout';
 import { FINISH_PHRASES, LETTER_COLORS, PHONETIC_PHRASES, getCharacter } from '../../constants/characterLibrary';
 import { normalizeFor, useResponsive } from '../../lib/responsive';
+import { haptics } from '../../lib/haptics';
 import TraceCanvas from '../../components/TraceCanvas';
 import SpeakingAvatar, { type AvatarLine } from '../../components/SpeakingAvatar';
 import {
@@ -26,6 +26,7 @@ import {
   MIN_MOVES,
   REQUIRED_COVERAGE,
   TRACE_TOLERANCE,
+  allStrokesTraced,
   analyseStrokes,
   dotTolerance,
   fitTracingCanvas,
@@ -164,6 +165,7 @@ export default function SandboxScreen() {
 
   const successPlayerRef = useRef<any>(null);
   const errorPlayerRef = useRef<any>(null);
+  const onPathRef = useRef(true);
   const lastErrorSoundTime = useRef<number>(0);
 
   /** Light tick every few centimetres so the child can feel the stroke. */
@@ -174,7 +176,7 @@ export default function SandboxScreen() {
     if (moved < 38 || now - lastHapticTime.current < 45) return;
     lastHapticPoint.current = { x, y };
     lastHapticTime.current = now;
-    Haptics.selectionAsync();
+    haptics.tick();
   };
 
   /** Warn at most a few times per second so the phone does not buzz nonstop. */
@@ -182,7 +184,7 @@ export default function SandboxScreen() {
     const now = Date.now();
     if (now - lastWarnTime.current < 350) return;
     lastWarnTime.current = now;
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    haptics.offPath();
   };
 
   /** Recomputes dots/coverage/accuracy from the strokes still on screen. */
@@ -208,6 +210,7 @@ export default function SandboxScreen() {
   const handleReset = () => {
     setPaths([]);
     setIsOnPath(true);
+    onPathRef.current = true;
     setIsFinished(false);
     hitPoints.current = [];
     setHitIds([]);
@@ -241,7 +244,7 @@ export default function SandboxScreen() {
     setPaths((prev) => prev.slice(0, -1));
     rebuildProgress();
     lastHapticPoint.current = null;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    haptics.undo();
   };
 
   const handleExitOrContinue = () => {
@@ -327,20 +330,36 @@ export default function SandboxScreen() {
   const tryFinish = () => {
     if (finishedRef.current) return;
 
-    const dotsHit = new Set(hitPoints.current).size;
+    // Replay the strokes from scratch: isolated dot taps are ignored here, so
+    // they cannot satisfy the dots/coverage rules.
+    const analysis = analyseStrokes(
+      strokePoints.current,
+      charData.points,
+      charData.segments,
+      TRACE_TOLERANCE,
+      ENDPOINT_TOLERANCE
+    );
+    hitPoints.current = analysis.hits;
+    coveredSegments.current = analysis.covered;
+    fillSegments.current = analysis.fillCovered;
+    setHitIds(analysis.hits);
+    computeFillPaths();
+
+    const dotsHit = analysis.hits.length;
     const totalSegments = charData.segments.length;
-    const coverage = totalSegments > 0 ? coveredSegments.current.size / totalSegments : 0;
+    const coverage = totalSegments > 0 ? analysis.covered.size / totalSegments : 0;
     if (
       dotsHit < hitsNeeded ||
       coverage < REQUIRED_COVERAGE ||
-      totalMoves.current < MIN_MOVES
+      analysis.moves < MIN_MOVES ||
+      !allStrokesTraced(charData.segments, analysis.fillCovered)
     ) {
       return;
     }
 
     finishedRef.current = true;
 
-    const calculatedScore = Math.max(50, Math.round(((totalMoves.current - errorMoves.current) / totalMoves.current) * 100));
+    const calculatedScore = Math.max(50, Math.round(((analysis.moves - analysis.offPath) / analysis.moves) * 100));
 
     let stars = 1;
     if (calculatedScore >= 90) stars = 3;
@@ -360,7 +379,7 @@ export default function SandboxScreen() {
       } catch {}
     }
 
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    haptics.finished();
     saveLocalHomePractice(calculatedScore);
 
     // Reward reveal: a short pause lets the finished letter register first,
@@ -422,7 +441,7 @@ export default function SandboxScreen() {
     });
     if (gainedDot) {
       setHitIds([...hitPoints.current]);
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      haptics.checkpoint();
     }
 
     // 2. Track coverage + check the finger is still inside the writing lane.
@@ -439,10 +458,13 @@ export default function SandboxScreen() {
     setBeePos({ x, y });
 
     if (distance <= TRACE_TOLERANCE) {
+      if (!onPathRef.current) haptics.backOnPath();
+      onPathRef.current = true;
       setIsOnPath(true);
       // Continuous light ticks let the child feel the stroke under their finger.
       pulseHaptic(x, y);
     } else {
+      onPathRef.current = false;
       setIsOnPath(false);
       errorMoves.current += 1;
       warnHaptic();
@@ -491,6 +513,7 @@ export default function SandboxScreen() {
         const svgY = (locationY / canvasRef.current.height) * 600;
         if (strokePoints.current.length === 0) handlersRef.current.announcePhonetic();
         strokePoints.current.push([{ x: svgX, y: svgY }]);
+        haptics.startStroke();
         lastHapticPoint.current = { x: svgX, y: svgY };
         lastHapticTime.current = Date.now();
         setPaths((prev) => [...prev, `M${svgX.toFixed(1)},${svgY.toFixed(1)}`]);
@@ -516,12 +539,16 @@ export default function SandboxScreen() {
       },
 
       onPanResponderRelease: () => {
+        const lastStroke = strokePoints.current[strokePoints.current.length - 1];
+        if (!finishedRef.current && lastStroke && haptics.isRealStroke(lastStroke)) haptics.strokeDone();
         handlersRef.current.tryFinish();
       },
 
       // Android can steal the gesture (notification, parent scroll). Without this
       // a finished shape would never unlock the reward.
       onPanResponderTerminate: () => {
+        const lastStroke = strokePoints.current[strokePoints.current.length - 1];
+        if (!finishedRef.current && lastStroke && haptics.isRealStroke(lastStroke)) haptics.strokeDone();
         handlersRef.current.tryFinish();
       },
     })
