@@ -17,23 +17,19 @@ export type CharacterEntry = TraceCharacter & {
   word: string;
   /** Optional artwork — only A and B ship with images today. */
   image?: number;
-  /** Optional letter-sound loop. */
-  phoneticSound?: number;
   /** Optional success sound for the anchor word. */
   wordSound?: number;
 };
 
-type CharacterAssets = Pick<CharacterEntry, 'image' | 'phoneticSound' | 'wordSound'>;
+type CharacterAssets = Pick<CharacterEntry, 'image' | 'wordSound'>;
 
 const CHARACTER_ASSETS: Record<string, CharacterAssets> = {
   A: {
     image: require('../assets/images/Atis.png'),
-    phoneticSound: require('../assets/sounds/Atis.mp3'),
     wordSound: require('../assets/sounds/Atis_suc.mp3'),
   },
   B: {
     image: require('../assets/images/Bahay.png'),
-    phoneticSound: require('../assets/sounds/Bahay.mp3'),
     wordSound: require('../assets/sounds/Bahay_suc.mp3'),
   },
 };
@@ -59,6 +55,44 @@ export const CHARACTER_LIBRARY: Record<string, CharacterEntry> = Object.fromEntr
         ...(CHARACTER_ASSETS[character] ?? {}),
       },
     ])
+);
+
+/** English equivalents for the "A for Apple" style praise line. */
+const ENGLISH_WORDS: Record<string, string> = {
+  A: 'Apple',
+  B: 'House',
+  C: 'Cake',
+  '1': 'One',
+  '2': 'Two',
+};
+
+/** Short sounds used when the child first touches a character. */
+const PHONETIC_SOUNDS: Record<string, string> = {
+  A: 'Ah',
+  B: 'Buh',
+  C: 'Kuh',
+  '1': 'One',
+  '2': 'Two',
+};
+
+/** The avatar says the sound twice at the start of a trace. */
+export const PHONETIC_PHRASES: Record<string, { ph: string; en: string }> = Object.fromEntries(
+  ALL_CHARACTERS.map((character) => {
+    const sound = PHONETIC_SOUNDS[character] ?? character;
+    const line = `${sound}, ${sound}!`;
+    return [character, { ph: line, en: line }];
+  })
+);
+
+/** What the side avatar says right after a character is finished. */
+export const FINISH_PHRASES: Record<string, { ph: string; en: string }> = Object.fromEntries(
+  ALL_CHARACTERS.map((character) => [
+    character,
+    {
+      ph: `${character} para sa ${ANCHOR_WORDS[character] ?? character}! Ang galing mo!`,
+      en: `${character} for ${ENGLISH_WORDS[character] ?? ANCHOR_WORDS[character] ?? character}! Great job!`,
+    },
+  ])
 );
 
 export function getCharacter(character?: string | null): CharacterEntry {

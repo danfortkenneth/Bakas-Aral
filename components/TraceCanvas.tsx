@@ -21,6 +21,8 @@ const VIEW_W = 400;
 const VIEW_H = 600;
 const LETTER_WIDTH = 88;
 const OUTLINE_WIDTH = 100;
+/** Traced colour is slimmer than the letter so it reads as a finger trail. */
+const FILL_WIDTH = 60;
 /** Seconds of no progress before the hint hand appears. */
 const IDLE_MS = 2200;
 
@@ -349,9 +351,9 @@ export default function TraceCanvas({
         {/* Traced area: solid purple base + swirl pattern + soft highlight */}
         {fillPaths.map((fillPath, index) => (
           <React.Fragment key={index}>
-            <Path d={fillPath} fill="none" stroke="#4B32C3" strokeWidth={LETTER_WIDTH} strokeLinecap="round" strokeLinejoin="round" />
-            <Path d={fillPath} fill="none" stroke="url(#traceSwirl)" strokeWidth={LETTER_WIDTH} strokeLinecap="round" strokeLinejoin="round" opacity={0.7} />
-            <Path d={fillPath} fill="none" stroke="#FFFFFF" strokeWidth={10} strokeLinecap="round" strokeLinejoin="round" opacity={0.14} />
+            <Path d={fillPath} fill="none" stroke="#4B32C3" strokeWidth={FILL_WIDTH} strokeLinecap="round" strokeLinejoin="round" />
+            <Path d={fillPath} fill="none" stroke="url(#traceSwirl)" strokeWidth={FILL_WIDTH} strokeLinecap="round" strokeLinejoin="round" opacity={0.7} />
+            <Path d={fillPath} fill="none" stroke="#FFFFFF" strokeWidth={6} strokeLinecap="round" strokeLinejoin="round" opacity={0.14} />
           </React.Fragment>
         ))}
 

@@ -122,12 +122,14 @@ replaces direction arrows. Game rules are unchanged: dots, coverage, haptics,
 undo and the sticker reward are still driven by the screens.
 
 A side **speaking avatar** (`components/SpeakingAvatar.tsx`) gives the child a
-short instruction and a success line. It uses the device's own text-to-speech via
-`expo-speech` (Filipino voice when available, English fallback otherwise), so it
-works offline and needs no API key. The avatar picture lives in
-`assets/images/student-avatar.png`; the higher pitch (1.5) makes the device voice
-sound more childlike. Swap in generated child-voice audio later if you want a
-more natural read. Game rules are unchanged.
+short instruction, says the character's sound twice when a trace starts
+(`PHONETIC_PHRASES`), and says the anchor line when the character is finished
+("A for Apple!" / "A para sa Atis!" from `FINISH_PHRASES`). It uses the device's
+own text-to-speech via `expo-speech` (Filipino voice when available, English
+fallback otherwise), so it works offline and needs no API key. The avatar picture
+lives in `assets/images/student-avatar.png`; the higher pitch (1.5) makes the
+device voice sound more childlike. Swap in generated child-voice audio later if
+you want a more natural read.
 
 ### Completion and reward
 
@@ -155,9 +157,12 @@ screen. A child can fix a wrong stroke without starting over.
   stays on the line, so the stroke can be felt under the finger,
 - a throttled `Warning` buzz (max ~3/second) when the finger leaves the line.
 
-Finishing a character unlocks the **sticker card** for that anchor word. The
-card waits ~400 ms, then fades/springs in while the stars pop one by one, and it
-stays non-interactive until it is visible.
+Finishing a character unlocks the sticker for that anchor word. Instead of a
+full-screen card, the reward is now a **compact sticker badge** near the top
+(artwork, word, accuracy, three stars) plus a small **Retry / Continue** bar above
+the tab bar. After ~400 ms it fades/springs in and the stars pop one by one; it
+stays non-interactive until visible. The avatar says the anchor line at the same
+time, so the finished letter stays visible.
 
 ## Device support
 

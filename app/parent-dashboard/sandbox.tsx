@@ -8,8 +8,7 @@ import {
   Image, 
   Animated, 
   Dimensions, 
-  ActivityIndicator,
-  ScrollView
+  ActivityIndicator
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -18,7 +17,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useLanguage } from '../_layout';
-import { getCharacter } from '../../constants/characterLibrary';
+import { FINISH_PHRASES, PHONETIC_PHRASES, getCharacter } from '../../constants/characterLibrary';
 import { normalizeFor, useResponsive } from '../../lib/responsive';
 import TraceCanvas from '../../components/TraceCanvas';
 import SpeakingAvatar, { type AvatarLine } from '../../components/SpeakingAvatar';
@@ -160,7 +159,6 @@ export default function SandboxScreen() {
   const lastHapticTime = useRef<number>(0);
   const lastWarnTime = useRef<number>(0);
 
-  const phoneticPlayerRef = useRef<any>(null);
   const successPlayerRef = useRef<any>(null);
   const errorPlayerRef = useRef<any>(null);
   const lastErrorSoundTime = useRef<number>(0);
@@ -247,20 +245,9 @@ export default function SandboxScreen() {
 
   useEffect(() => {
     try {
-      if (phoneticPlayerRef.current) {
-        phoneticPlayerRef.current.remove();
-        phoneticPlayerRef.current = null;
-      }
       if (successPlayerRef.current) {
         successPlayerRef.current.remove();
         successPlayerRef.current = null;
-      }
-
-      if (charData.phoneticSound) {
-        const pPlayer = createAudioPlayer(charData.phoneticSound);
-        pPlayer.loop = true;
-        pPlayer.volume = 0.7;
-        phoneticPlayerRef.current = pPlayer;
       }
 
       if (charData.wordSound) {
@@ -276,13 +263,12 @@ export default function SandboxScreen() {
 
     return () => {
       try {
-        if (phoneticPlayerRef.current) phoneticPlayerRef.current.remove();
         if (successPlayerRef.current) successPlayerRef.current.remove();
       } catch {}
     };
     // handleReset only touches stable setters/refs, so it is intentionally omitted.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedChar, charData.phoneticSound, charData.wordSound]);
+  }, [selectedChar, charData.wordSound]);
 
   useEffect(() => {
     try {
@@ -359,12 +345,8 @@ export default function SandboxScreen() {
     setEarnedStars(stars);
     setIsFinished(true);
     setIsOnPath(true);
-    setAvatarLine(successLine());
+    setAvatarLine(FINISH_PHRASES[selectedChar] ?? successLine());
     setAvatarTrigger((value) => value + 1);
-
-    if (phoneticPlayerRef.current) {
-      try { phoneticPlayerRef.current.pause(); } catch {}
-    }
 
     if (successPlayerRef.current) {
       try {
@@ -473,6 +455,22 @@ export default function SandboxScreen() {
     tryFinish();
   };
 
+  /** The avatar says the character's sound twice when a new trace starts. */
+  const announcePhonetic = () => {
+    const phrase = PHONETIC_PHRASES[selectedChar] ?? {
+      ph: `${selectedChar}, ${selectedChar}!`,
+      en: `${selectedChar}, ${selectedChar}!`,
+    };
+    setAvatarLine(phrase);
+    setAvatarTrigger((value) => value + 1);
+  };
+
+  // PanResponder is created once, so it must call the latest handlers.
+  const handlersRef = useRef({ registerTouch, tryFinish, announcePhonetic });
+  useEffect(() => {
+    handlersRef.current = { registerTouch, tryFinish, announcePhonetic };
+  });
+
   // PanResponder callbacks run in gesture handlers, not during render; refs are safe here.
   // eslint-disable-next-line react-hooks/refs
   const [panResponder] = useState(() =>
@@ -485,15 +483,12 @@ export default function SandboxScreen() {
         const { locationX, locationY } = evt.nativeEvent;
         const svgX = (locationX / canvasRef.current.width) * 400;
         const svgY = (locationY / canvasRef.current.height) * 600;
+        if (strokePoints.current.length === 0) handlersRef.current.announcePhonetic();
         strokePoints.current.push([{ x: svgX, y: svgY }]);
         lastHapticPoint.current = { x: svgX, y: svgY };
         lastHapticTime.current = Date.now();
         setPaths((prev) => [...prev, `M${svgX.toFixed(1)},${svgY.toFixed(1)}`]);
-        registerTouch(svgX, svgY);
-
-        if (phoneticPlayerRef.current) {
-          try { phoneticPlayerRef.current.play(); } catch {}
-        }
+        handlersRef.current.registerTouch(svgX, svgY);
       },
 
       onPanResponderMove: (evt) => {
@@ -511,23 +506,17 @@ export default function SandboxScreen() {
           updated[updated.length - 1] = `${updated[updated.length - 1]} L${svgX.toFixed(1)},${svgY.toFixed(1)}`;
           return updated;
         });
-        registerTouch(svgX, svgY);
+        handlersRef.current.registerTouch(svgX, svgY);
       },
 
       onPanResponderRelease: () => {
-        if (phoneticPlayerRef.current) {
-          try { phoneticPlayerRef.current.pause(); } catch {}
-        }
-        tryFinish();
+        handlersRef.current.tryFinish();
       },
 
       // Android can steal the gesture (notification, parent scroll). Without this
       // a finished shape would never unlock the reward.
       onPanResponderTerminate: () => {
-        if (phoneticPlayerRef.current) {
-          try { phoneticPlayerRef.current.pause(); } catch {}
-        }
-        tryFinish();
+        handlersRef.current.tryFinish();
       },
     })
   );
@@ -618,97 +607,66 @@ export default function SandboxScreen() {
 
         {isFinished && (
           <View style={styles.rewardOverlay} pointerEvents="box-none">
-          <Animated.View
-            pointerEvents={rewardReady ? 'auto' : 'none'}
-            style={[
-              styles.successContent,
-              {
-                opacity: fadeAnim,
-                transform: [{ scale: cardScale }],
-                maxHeight: Math.max(260, windowHeight - insets.top - insets.bottom - 24),
-              },
-            ]}
-          >
-            <ScrollView
-              style={styles.rewardScroll}
-              contentContainerStyle={styles.rewardScrollContent}
-              showsVerticalScrollIndicator={false}
-            >
-            <View style={styles.rewardBadgeRow}>
-              <Ionicons name="trophy" size={normalize(16)} color="#B45309" />
-              <Text style={styles.rewardBadgeText}>
-                {lang === 'ph' ? 'BAGONG STICKER!' : 'NEW STICKER!'}
-              </Text>
-            </View>
-
-            <View style={styles.rewardHeaderRow}>
-              <Text style={styles.rewardTitle}>
-                {lang === 'ph'
-                  ? `NAKUMBIDA MO ANG TITIK ${selectedChar}, ${studentName.toUpperCase()}!`
-                  : `YOU TRACED THE LETTER ${selectedChar}, ${studentName.toUpperCase()}!`}
-              </Text>
-              <Text style={styles.rewardSubtitle}>
-                {lang === 'ph'
-                  ? `Ang galing! Narito ang sticker mo para sa "${charData.word}".`
-                  : `Great job! Here is your sticker for "${charData.word}".`}
-              </Text>
-            </View>
-
-            <View style={styles.starsRewardRow}>
-              {starAnims.map((anim, index) => (
-                <Animated.View key={index} style={{ transform: [{ scale: anim }] }}>
-                  <Ionicons
-                    name="star"
-                    size={normalize(index === 1 ? 34 : 26)}
-                    color={earnedStars > index ? '#FBBF24' : '#E5E7EB'}
-                    style={index === 1 ? { marginTop: -6 } : undefined}
-                  />
-                </Animated.View>
-              ))}
-            </View>
-
-            <View style={styles.stickerEmblemFrameBox}>
-              {charData.image ? (
-                <Image source={charData.image} style={styles.anchorImage} resizeMode="contain" />
-              ) : (
-                <View style={styles.anchorImageFallback}>
-                  <Text style={styles.anchorImageFallbackText}>{selectedChar}</Text>
+            <View style={styles.compactStickerWrap}>
+              <Animated.View
+                pointerEvents={rewardReady ? 'auto' : 'none'}
+                style={[styles.compactSticker, { opacity: fadeAnim, transform: [{ scale: cardScale }] }]}
+              >
+                {charData.image ? (
+                  <Image source={charData.image} style={styles.compactStickerImage} resizeMode="contain" />
+                ) : (
+                  <View style={styles.compactStickerFallback}>
+                    <Text style={styles.compactStickerChar}>{selectedChar}</Text>
+                  </View>
+                )}
+                <View style={styles.compactStickerInfo}>
+                  <Text style={styles.compactStickerTitle} numberOfLines={1}>
+                    {selectedChar} - {charData.word}
+                  </Text>
+                  <Text style={styles.compactStickerAccuracy}>
+                    {lang === 'ph' ? `Katumpakan: ${accuracy}%` : `Accuracy: ${accuracy}%`}
+                  </Text>
+                  <View style={styles.compactStarsRow}>
+                    {starAnims.map((anim, index) => (
+                      <Animated.View key={index} style={{ transform: [{ scale: anim }] }}>
+                        <Ionicons
+                          name="star"
+                          size={16}
+                          color={earnedStars > index ? '#FBBF24' : '#E5E7EB'}
+                        />
+                      </Animated.View>
+                    ))}
+                  </View>
                 </View>
-              )}
-              <Text style={styles.stickerBadgePillLabel}>
-                {selectedChar} - {charData.word}
-              </Text>
+              </Animated.View>
             </View>
 
-            <Text style={styles.anchorTextDescription}>
-              {lang === 'ph'
-                ? 'Ligtas na na-save ang sticker sa offline book.'
-                : 'Your sticker has been saved to your offline book.'}
-            </Text>
-
-            <Text style={styles.accuracyPillTextBadge}>
-              {lang === 'ph' ? `Katumpakan: ${accuracy}%` : `Accuracy: ${accuracy}%`}
-            </Text>
-
-            <View style={styles.btnRow}>
-              <TouchableOpacity style={[styles.modalBtn, styles.modalBtnSecondary]} onPress={handleReset}>
+            <Animated.View
+              pointerEvents={rewardReady ? 'box-none' : 'none'}
+              style={[styles.compactActions, { opacity: fadeAnim }]}
+            >
+              <TouchableOpacity
+                style={[styles.compactBtn, styles.compactBtnSecondary]}
+                onPress={handleReset}
+              >
                 <Ionicons name="refresh" size={18} color="#555" style={{ marginRight: 4 }} />
-                <Text style={styles.modalBtnTextSec}>{lang === 'ph' ? 'Ulitin' : 'Retry'}</Text>
+                <Text style={styles.compactBtnTextSecondary}>
+                  {lang === 'ph' ? 'Ulitin' : 'Retry'}
+                </Text>
               </TouchableOpacity>
-              
-              <TouchableOpacity style={styles.modalBtn} onPress={handleExitOrContinue} disabled={saving}>
+              <TouchableOpacity style={styles.compactBtn} onPress={handleExitOrContinue} disabled={saving}>
                 {saving ? (
                   <ActivityIndicator color="white" />
                 ) : (
                   <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                    <Text style={styles.modalBtnText}>{lang === 'ph' ? 'Ipagpatuloy' : 'Continue'}</Text>
+                    <Text style={styles.compactBtnText}>
+                      {lang === 'ph' ? 'Ipagpatuloy' : 'Continue'}
+                    </Text>
                     <Ionicons name="arrow-forward" size={18} color="white" style={{ marginLeft: 4 }} />
                   </View>
                 )}
               </TouchableOpacity>
-            </View>
-            </ScrollView>
-          </Animated.View>
+            </Animated.View>
           </View>
         )}
 
@@ -732,6 +690,20 @@ const styles = StyleSheet.create({
   statusText: { fontWeight: '900', fontSize: normalize(12), color: '#333', letterSpacing: 0.5, textAlign: 'center' },
   canvasArea: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: '4%', paddingVertical: 6 },
   avatarSide: { left: -2, bottom: '12%' },
+  compactStickerWrap: { position: 'absolute', top: 130, left: 0, right: 0, alignItems: 'center' },
+  compactSticker: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: 'white', borderRadius: 22, borderWidth: 2, borderColor: '#FDE68A', paddingHorizontal: 12, paddingVertical: 8, maxWidth: '86%', elevation: 8, shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.12, shadowRadius: 8 },
+  compactStickerImage: { width: 48, height: 48, borderRadius: 12 },
+  compactStickerFallback: { width: 48, height: 48, borderRadius: 12, backgroundColor: '#DCFCE7', alignItems: 'center', justifyContent: 'center' },
+  compactStickerChar: { fontSize: 24, fontWeight: '900', color: '#16A34A' },
+  compactStickerInfo: { flexShrink: 1 },
+  compactStickerTitle: { fontSize: normalize(12), fontWeight: '900', color: '#7C4A03' },
+  compactStickerAccuracy: { fontSize: normalize(10), color: '#15803D', fontWeight: '800', marginTop: 2 },
+  compactStarsRow: { flexDirection: 'row', gap: 4, marginTop: 3 },
+  compactActions: { position: 'absolute', left: '5%', right: '5%', bottom: 8, flexDirection: 'row', gap: 10 },
+  compactBtn: { flex: 1, backgroundColor: '#F77F67', height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center', flexDirection: 'row' },
+  compactBtnSecondary: { backgroundColor: '#F3F4F6' },
+  compactBtnText: { color: 'white', fontWeight: '900', fontSize: normalize(12) },
+  compactBtnTextSecondary: { color: '#555', fontWeight: '900', fontSize: normalize(12) },
   
   rewardOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center', zIndex: 30 },
   successContent: { backgroundColor: 'white', padding: 25, paddingTop: 22, borderRadius: 35, borderWidth: 3, borderColor: '#FDE68A', alignItems: 'center', elevation: 25, shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.18, shadowRadius: 20, width: isTablet ? 450 : '88%', maxHeight: '88%', flexShrink: 1 },
