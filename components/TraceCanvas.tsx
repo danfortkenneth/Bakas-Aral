@@ -14,10 +14,11 @@
  * Uses only React Native's built-in Animated with the native driver, so there
  * are no extra dependencies and the motion stays smooth on low-end phones.
  */
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Defs, Ellipse, G, Path, Pattern, Rect } from 'react-native-svg';
 import type { HitPoint } from '../constants/traceableData';
+import { samplePolyline } from '../lib/tracing';
 
 const VIEW_W = 400;
 const VIEW_H = 600;
@@ -41,6 +42,8 @@ export type TraceCanvasProps = {
   beePos: { x: number; y: number };
   /** Base colour of the character. */
   color?: string;
+  /** Incremented on the child's first touch — stops the auto-demo bee. */
+  demoToken?: number;
   panHandlers: any;
 };
 
@@ -192,6 +195,7 @@ export default function TraceCanvas({
   isOnPath,
   beePos,
   color = '#0E5C5C',
+  demoToken = 0,
   panHandlers,
 }: TraceCanvasProps) {
   const sx = width / VIEW_W;
@@ -207,6 +211,45 @@ export default function TraceCanvas({
     : points[points.length - 1];
 
   const bee = toPx(beePos);
+
+  // Auto-demo: before the child starts, a bee shows the whole route once.
+  const demoPoints = useMemo(() => {
+    const pairs: { x: number; y: number }[] = [];
+    const pattern = /(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/g;
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(path))) pairs.push({ x: Number(match[1]), y: Number(match[2]) });
+    const sampled = pairs.length >= 2 ? samplePolyline(pairs, 6) : pairs;
+    if (sampled.length === 0) return [{ x: 200, y: 300 }, { x: 200, y: 300 }];
+    if (sampled.length === 1) return [sampled[0], sampled[0]];
+    return sampled;
+  }, [path]);
+
+  const [demoProgress] = useState(() => new Animated.Value(0));
+  const demoActive = demoToken === 0 && !isFinished;
+  useEffect(() => {
+    if (!demoActive) return;
+    demoProgress.setValue(0);
+    const animation = Animated.timing(demoProgress, {
+      toValue: demoPoints.length - 1,
+      duration: 3200,
+      easing: Easing.inOut(Easing.quad),
+      useNativeDriver: true,
+    });
+    animation.start();
+    return () => animation.stop();
+  }, [demoActive, demoPoints.length, demoProgress]);
+
+  const demoIndices = demoPoints.map((_, index) => index);
+  const demoX = demoProgress.interpolate({
+    inputRange: demoIndices,
+    outputRange: demoPoints.map((point) => point.x * sx - 20),
+    extrapolate: 'clamp',
+  });
+  const demoY = demoProgress.interpolate({
+    inputRange: demoIndices,
+    outputRange: demoPoints.map((point) => point.y * sy - 22),
+    extrapolate: 'clamp',
+  });
 
   /* ---- bee: spring follow, idle float, hit bounce, finish dance ---- */
   const [beeXY] = useState(() => new Animated.ValueXY({ x: bee.x - 20, y: bee.y - 22 }));
@@ -304,7 +347,7 @@ export default function TraceCanvas({
   }, [activityKey, isFinished]);
 
   const [handProgress] = useState(() => new Animated.Value(0));
-  const showHand = idleKey === activityKey && !isFinished && !!nextPoint;
+  const showHand = idleKey === activityKey && !isFinished && !demoActive && !!nextPoint;
   useEffect(() => {
     if (!showHand) return;
     handProgress.setValue(0);
@@ -350,6 +393,19 @@ export default function TraceCanvas({
           strokeLinecap="round"
           strokeLinejoin="round"
         />
+
+        {/* Faint centreline guide: shows the route, fades as the child fills it */}
+        {!isFinished && (
+          <Path
+            d={path}
+            fill="none"
+            stroke="#FFFFFF"
+            strokeWidth={14}
+            strokeLinecap="round"
+            strokeDasharray="4 16"
+            opacity={fillPaths.length > 0 ? 0.18 : 0.5}
+          />
+        )}
 
         {/* Traced area: solid purple base + swirl pattern + soft highlight */}
         {fillPaths.map((fillPath, index) => (
@@ -430,7 +486,18 @@ export default function TraceCanvas({
         </Animated.View>
       )}
 
-      {/* Bee buddy */}
+      {/* Auto-demo bee: shows the whole route once before the child starts */}
+      {demoActive && (
+        <Animated.View
+          pointerEvents="none"
+          style={[styles.bee, { transform: [{ translateX: demoX }, { translateY: demoY }] }]}
+        >
+          <Text style={styles.beeEmoji}>🐝</Text>
+        </Animated.View>
+      )}
+
+      {/* Bee buddy — takes over as soon as the demo ends */}
+      {!demoActive && (
       <Animated.View
         pointerEvents="none"
         style={[
@@ -455,6 +522,7 @@ export default function TraceCanvas({
           🐝
         </Animated.Text>
       </Animated.View>
+      )}
 
       {isFinished && <Confetti width={width} height={height} />}
     </View>

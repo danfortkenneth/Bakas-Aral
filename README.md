@@ -116,9 +116,11 @@ an entry to `CHARACTER_ASSETS` — no screen changes needed.
 `components/TraceCanvas.tsx` draws the play area shared by both tracing screens:
 a dark-teal character with a white sticker outline, white checkpoint dots, and a
 purple patterned fill that grows **along the covered guide segments** (so it
-stays inside the letter even when a child's finger wanders). A bee follows the
-finger and a beehive marks the end of the current stroke — the friendly cue that
-replaces direction arrows. Game rules are unchanged: dots, coverage, haptics,
+stays inside the letter even when a child's finger wanders). A faint dashed
+centreline shows the route and fades as the child fills it, and a **demo bee**
+traces the whole character once before the first touch. A bee follows the finger
+after that, and a beehive marks the end of the current stroke — the friendly cue
+that replaces direction arrows. Game rules are unchanged: dots, coverage, haptics,
 undo and the sticker reward are still driven by the screens.
 
 A side **speaking avatar** (`components/SpeakingAvatar.tsx`) gives the child a

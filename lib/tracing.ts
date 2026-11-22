@@ -101,34 +101,57 @@ export function markCoveredSegments(
   return shortest;
 }
 
+/** Which stroke a point is closest to — used to lock a finger onto one stroke. */
+export function nearestStrokeId(
+  x: number,
+  y: number,
+  segments: Segment[] | undefined
+): number | undefined {
+  if (!segments || segments.length === 0) return undefined;
+  let result: number | undefined;
+  let nearest = Number.POSITIVE_INFINITY;
+  for (const seg of segments) {
+    const distance = distanceToSegment(x, y, seg.x1, seg.y1, seg.x2, seg.y2);
+    if (distance < nearest) {
+      nearest = distance;
+      result = seg.strokeId;
+    }
+  }
+  return result;
+}
+
 /**
  * Like markCoveredSegments, but only colours the stroke the finger is actually
  * on. Without this, two nearby strokes (e.g. the legs of "A" near the apex)
- * would both light up from a single touch.
+ * would both light up from a single touch. Pass `lockedStrokeId` while the
+ * finger stays on one stroke so tight curves cannot jump to a neighbour.
  */
 export function markStrokeCoverage(
   x: number,
   y: number,
   segments: Segment[] | undefined,
   tolerance: number,
-  covered: Set<number>
+  covered: Set<number>,
+  lockedStrokeId?: number
 ): number {
   if (!segments || segments.length === 0) return Number.POSITIVE_INFINITY;
-
-  let nearestStrokeId: number | undefined;
-  let nearestDistance = Number.POSITIVE_INFINITY;
-  for (const seg of segments) {
-    const distance = distanceToSegment(x, y, seg.x1, seg.y1, seg.x2, seg.y2);
-    if (distance < nearestDistance) {
-      nearestDistance = distance;
-      nearestStrokeId = seg.strokeId;
+  if (lockedStrokeId !== undefined) {
+    let shortest = Number.POSITIVE_INFINITY;
+    for (let i = 0; i < segments.length; i++) {
+      const seg = segments[i];
+      if (seg.strokeId !== lockedStrokeId) continue;
+      const distance = distanceToSegment(x, y, seg.x1, seg.y1, seg.x2, seg.y2);
+      if (distance <= tolerance) covered.add(i);
+      if (distance < shortest) shortest = distance;
     }
+    return shortest;
   }
 
+  const nearestStrokeIdValue = nearestStrokeId(x, y, segments);
   let shortest = Number.POSITIVE_INFINITY;
   for (let i = 0; i < segments.length; i++) {
     const seg = segments[i];
-    if (nearestStrokeId !== undefined && seg.strokeId !== nearestStrokeId) continue;
+    if (nearestStrokeIdValue !== undefined && seg.strokeId !== nearestStrokeIdValue) continue;
     const distance = distanceToSegment(x, y, seg.x1, seg.y1, seg.x2, seg.y2);
     if (distance <= tolerance) covered.add(i);
     if (distance < shortest) shortest = distance;

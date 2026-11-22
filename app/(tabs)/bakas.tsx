@@ -23,7 +23,9 @@ import {
   fitTracingCanvas,
   markCoveredSegments,
   markStrokeCoverage,
+  nearestStrokeId,
   requiredHits,
+  samplePolyline,
 } from '../../lib/tracing';
 
 // Initial metrics for the static stylesheet. The live canvas below uses
@@ -88,6 +90,7 @@ export default function BakasScreen() {
     en: `Follow the white dots to make ${selectedChar}. Start at the bee!`,
   }));
   const [avatarTrigger, setAvatarTrigger] = useState(0);
+  const [demoToken, setDemoToken] = useState(0);
 
   /** Lines are rebuilt from the current character so the avatar stays in sync. */
   const instructionLine = (): AvatarLine => ({
@@ -110,6 +113,8 @@ export default function BakasScreen() {
   const coveredSegments = useRef<Set<number>>(new Set());
   /** Only segments of the stroke under the finger — drives the violet fill. */
   const fillSegments = useRef<Set<number>>(new Set());
+  /** Keeps the fill locked to one stroke while the finger is down. */
+  const fillStrokeLock = useRef<number | null>(null);
   /** Raw points of every stroke drawn in this attempt — powers undo. */
   const strokePoints = useRef<{ x: number; y: number }[][]>([]);
 
@@ -148,6 +153,25 @@ export default function BakasScreen() {
     }
     if (current) result.push(current);
     setFillPaths(result);
+  };
+
+  /**
+   * Fills the gap between two touch samples. Fast strokes generate sparse
+   * native events, so without interpolation the violet trail lags behind the
+   * finger. Samples are painted immediately and independently of the dots.
+   */
+  const paintBetween = (from: { x: number; y: number }, to: { x: number; y: number }) => {
+    for (const sample of samplePolyline([from, to], 8)) {
+      const locked = fillStrokeLock.current;
+      const strokeId = locked ?? nearestStrokeId(sample.x, sample.y, charData.segments);
+      const before = fillSegments.current.size;
+      markCoveredSegments(sample.x, sample.y, charData.segments, TRACE_TOLERANCE, coveredSegments.current);
+      markStrokeCoverage(sample.x, sample.y, charData.segments, 90, fillSegments.current, strokeId);
+      if (fillStrokeLock.current === null && fillSegments.current.size > before && strokeId !== undefined) {
+        fillStrokeLock.current = strokeId;
+      }
+    }
+    computeFillPaths();
   };
 
   // Haptics: the tactile "texture" of the stroke is a core part of the game.
@@ -202,6 +226,7 @@ export default function BakasScreen() {
     finishedRef.current = false;
     coveredSegments.current.clear();
   fillSegments.current.clear();
+  fillStrokeLock.current = null;
     strokePoints.current = [];
     setFillPaths([]);
     const first = charData.points[0];
@@ -224,6 +249,7 @@ export default function BakasScreen() {
     setPaths((prev) => prev.slice(0, -1));
     rebuildProgress();
     setIsOnPath(true);
+    fillStrokeLock.current = null;
     haptics.undo();
   };
 
@@ -299,9 +325,7 @@ export default function BakasScreen() {
     );
     hitPoints.current = analysis.hits;
     coveredSegments.current = analysis.covered;
-    fillSegments.current = analysis.fillCovered;
     setHitIds(analysis.hits);
-    computeFillPaths();
 
     const dotsHit = analysis.hits.length;
     const totalSegments = charData.segments.length;
@@ -403,9 +427,6 @@ export default function BakasScreen() {
       TRACE_TOLERANCE,
       coveredSegments.current
     );
-    const fillBefore = fillSegments.current.size;
-    markStrokeCoverage(x, y, charData.segments, TRACE_TOLERANCE, fillSegments.current);
-    if (fillSegments.current.size !== fillBefore) computeFillPaths();
     setBeePos({ x, y });
 
     if (distance <= TRACE_TOLERANCE) {
@@ -442,13 +463,14 @@ export default function BakasScreen() {
     };
     setAvatarLine(phrase);
     setAvatarTrigger((value) => value + 1);
+    setDemoToken((value) => value + 1);
   };
 
   // PanResponder is created once, so it must call the *latest* handlers
   // (otherwise it keeps using the first character's data after selectedChar changes).
-  const handlersRef = useRef({ registerTouch, tryFinish, announcePhonetic });
+  const handlersRef = useRef({ registerTouch, tryFinish, announcePhonetic, paintBetween });
   useEffect(() => {
-    handlersRef.current = { registerTouch, tryFinish, announcePhonetic };
+    handlersRef.current = { registerTouch, tryFinish, announcePhonetic, paintBetween };
   });
 
   // PanResponder callbacks run in gesture handlers, not during render; refs are safe here.
@@ -464,7 +486,10 @@ export default function BakasScreen() {
         const svgX = (locationX / canvasRef.current.width) * 400;
         const svgY = (locationY / canvasRef.current.height) * 600;
         if (strokePoints.current.length === 0) handlersRef.current.announcePhonetic();
+        setDemoToken(1);
         strokePoints.current.push([{ x: svgX, y: svgY }]);
+        fillStrokeLock.current = null;
+        handlersRef.current.paintBetween({ x: svgX, y: svgY }, { x: svgX, y: svgY });
         haptics.startStroke();
         setPaths((prev) => [...prev, `M${svgX.toFixed(1)},${svgY.toFixed(1)}`]);
         handlersRef.current.registerTouch(svgX, svgY);
@@ -477,7 +502,9 @@ export default function BakasScreen() {
         const svgY = (locationY / canvasRef.current.height) * 600;
 
         const currentStroke = strokePoints.current[strokePoints.current.length - 1];
+        const previous = currentStroke ? currentStroke[currentStroke.length - 1] : null;
         if (currentStroke) currentStroke.push({ x: svgX, y: svgY });
+        if (previous) handlersRef.current.paintBetween(previous, { x: svgX, y: svgY });
 
         setPaths((prev) => {
           if (prev.length === 0) return prev;
@@ -534,6 +561,14 @@ export default function BakasScreen() {
 
             <View style={styles.topActions}>
               <TouchableOpacity
+                style={styles.backBtn}
+                onPress={() => setDemoToken(0)}
+                accessibilityLabel={lang === 'ph' ? 'Ipakita ulit ang guhit' : 'Show me again'}
+              >
+                <Ionicons name="play" size={20} color="#333" />
+              </TouchableOpacity>
+
+              <TouchableOpacity
                 style={[styles.backBtn, (paths.length === 0 || isFinished) && styles.backBtnDisabled]}
                 onPress={handleUndo}
                 disabled={paths.length === 0 || isFinished}
@@ -580,6 +615,7 @@ export default function BakasScreen() {
             isOnPath={isOnPath}
             beePos={beePos}
             color={LETTER_COLORS[selectedChar] ?? '#0E5C5C'}
+            demoToken={demoToken}
             panHandlers={panResponder.panHandlers}
           />
           <SpeakingAvatar
