@@ -69,7 +69,11 @@ export default function SandboxScreen() {
   const selectedChar = (params.selectedChar as string) || 'A';
   const studentName = (params.studentName as string) || (params.nickname as string) || 'mae';
   const activeAvatar = ((params.activeAvatar as string) || (params.avatar as string) || 'tiger').toLowerCase();
-  
+  const practiceChars = ((params.practiceChars as string) || '').split('').filter(Boolean);
+  const practiceIndex = Math.max(0, Number(params.practiceIndex) || 0);
+  const starsSoFar = Math.max(0, Number(params.earnedStars) || 0);
+  const nextPracticeChar = practiceChars[practiceIndex + 1];
+
   const charData = getCharacter(selectedChar);
 
   const [paths, setPaths] = useState<string[]>([]);
@@ -170,7 +174,11 @@ export default function SandboxScreen() {
   const paintBetween = (from: { x: number; y: number }, to: { x: number; y: number }) => {
     for (const sample of samplePolyline([from, to], 8)) {
       const locked = fillStrokeLock.current;
-      const strokeId = locked ?? nearestStrokeId(sample.x, sample.y, charData.segments);
+      // Lock onto the stroke of the next unhit dot — short connector strokes
+      // (the flag of "1", the foot of "2") sit right beside longer ones, so a
+      // plain nearest-segment lookup would skip them.
+      const nextStrokeId = charData.points.find((point: any) => !hitPoints.current.includes(point.id))?.strokeId;
+      const strokeId = locked ?? nextStrokeId ?? nearestStrokeId(sample.x, sample.y, charData.segments);
       const before = fillSegments.current.size;
       markCoveredSegments(sample.x, sample.y, charData.segments, TRACE_TOLERANCE, coveredSegments.current);
       markStrokeCoverage(sample.x, sample.y, charData.segments, 90, fillSegments.current, strokeId);
@@ -258,13 +266,31 @@ export default function SandboxScreen() {
   };
 
   const handleExitOrContinue = () => {
-    router.replace('/parent-dashboard' as any);
+    // Exiting mid-trace goes back to the parent dashboard.
+    if (!isFinished || !nextPracticeChar) {
+      router.replace('/parent-dashboard' as any);
+      return;
+    }
+
+    // Guided set: advance to the next character, carrying the earned stars.
+    router.replace({
+      pathname: '/parent-dashboard/sandbox' as any,
+      params: {
+        studentName,
+        activeAvatar,
+        selectedChar: nextPracticeChar,
+        practiceChars: practiceChars.join(''),
+        practiceIndex: String(practiceIndex + 1),
+        earnedStars: String(starsSoFar + earnedStars),
+      },
+    });
   };
 
   useEffect(() => {
     // Resetting tracing state on character change is intentional.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     handleReset();
+    setDemoToken(0);
     // handleReset only touches stable setters/refs, so it is intentionally omitted.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedChar]);

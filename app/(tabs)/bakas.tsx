@@ -163,7 +163,11 @@ export default function BakasScreen() {
   const paintBetween = (from: { x: number; y: number }, to: { x: number; y: number }) => {
     for (const sample of samplePolyline([from, to], 8)) {
       const locked = fillStrokeLock.current;
-      const strokeId = locked ?? nearestStrokeId(sample.x, sample.y, charData.segments);
+      // Lock onto the stroke of the next unhit dot — short connector strokes
+      // (the flag of "1", the foot of "2") sit right beside longer ones, so a
+      // plain nearest-segment lookup would skip them.
+      const nextStrokeId = charData.points.find((point: any) => !hitPoints.current.includes(point.id))?.strokeId;
+      const strokeId = locked ?? nextStrokeId ?? nearestStrokeId(sample.x, sample.y, charData.segments);
       const before = fillSegments.current.size;
       markCoveredSegments(sample.x, sample.y, charData.segments, TRACE_TOLERANCE, coveredSegments.current);
       markStrokeCoverage(sample.x, sample.y, charData.segments, 90, fillSegments.current, strokeId);
@@ -257,6 +261,7 @@ export default function BakasScreen() {
     // Resetting tracing state on character change is intentional.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     handleReset();
+    setDemoToken(0);
     // handleReset only touches stable setters/refs, so it is safe to omit.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedChar]);

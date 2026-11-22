@@ -20,6 +20,7 @@ import { File } from 'expo-file-system';
 import jsQR from 'jsqr';
 import { decode as decodeJpeg } from 'jpeg-js';
 import { scaleFor } from '../../lib/responsive';
+import { ALL_CHARACTERS } from '../../constants/characterLibrary';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const scale = scaleFor(SCREEN_WIDTH);
@@ -299,6 +300,25 @@ export default function ParentsDashboardScreen() {
     );
   }
 
+  const openPractice = (character: string, sequence?: string, index = 0, stars = 0) => {
+    router.push({
+      pathname: '/parent-dashboard/sandbox' as any,
+      params: {
+        studentName: savedProgress?.nickname ?? 'Learner',
+        activeAvatar: savedProgress?.avatar ?? 'tiger',
+        selectedChar: character,
+        practiceChars: sequence ?? '',
+        practiceIndex: String(index),
+        earnedStars: String(stars),
+      },
+    });
+  };
+
+  const startGuidedSet = () => {
+    if (ALL_CHARACTERS.length === 0) return;
+    openPractice(ALL_CHARACTERS[0], ALL_CHARACTERS.join(''), 0, 0);
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -353,6 +373,37 @@ export default function ParentsDashboardScreen() {
             <MaterialCommunityIcons name="play-circle" size={24} color="#141414" />
             <Text style={styles.practiceBtnText}>{`Start Practice Session for ${savedProgress.nickname}`}</Text>
           </TouchableOpacity>
+        </View>
+
+        {/* PRACTICE HUB — free practice + guided set */}
+        <View style={styles.practiceHub}>
+          <View style={styles.practiceHubHeader}>
+            <View>
+              <Text style={styles.practiceHubTitle}>Practice Hub</Text>
+              <Text style={styles.practiceHubSub}>
+                {`Let ${savedProgress?.nickname ?? 'your child'} trace any character`}
+              </Text>
+            </View>
+            <TouchableOpacity style={styles.guidedBtn} onPress={startGuidedSet}>
+              <Ionicons name="play" size={14} color="white" />
+              <Text style={styles.guidedBtnText}>Practice all</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.practiceGrid}>
+            {ALL_CHARACTERS.map((character) => (
+              <TouchableOpacity
+                key={character}
+                style={[
+                  styles.practiceTile,
+                  /^[0-9]$/.test(character) && styles.practiceTileNumber,
+                ]}
+                onPress={() => openPractice(character)}
+              >
+                <Text style={styles.practiceTileText}>{character}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
         </View>
 
         {/* METRICS GRID */}
@@ -459,6 +510,16 @@ const styles = StyleSheet.create({
   childSchool: { color: '#9CA3AF', fontSize: normalize(10) },
   practiceBtn: { flexDirection: 'row', backgroundColor: '#4ADE80', padding: 15, borderRadius: 15, justifyContent: 'center', alignItems: 'center' },
   practiceBtnText: { color: '#141414', fontWeight: 'bold', fontSize: normalize(12), marginLeft: 8 },
+  practiceHub: { backgroundColor: 'white', borderRadius: 22, padding: 16, marginTop: 16, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 6 },
+  practiceHubHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
+  practiceHubTitle: { fontSize: normalize(15), fontWeight: '900', color: '#1F2937' },
+  practiceHubSub: { fontSize: normalize(10), color: '#9CA3AF', marginTop: 2 },
+  guidedBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: '#F77F67', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16 },
+  guidedBtnText: { color: 'white', fontWeight: '900', fontSize: normalize(10) },
+  practiceGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  practiceTile: { width: (SCREEN_WIDTH - 76) / 6, aspectRatio: 0.9, borderRadius: 12, backgroundColor: '#FFF7ED', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#FED7AA' },
+  practiceTileNumber: { backgroundColor: '#E0F2FE', borderColor: '#BAE6FD' },
+  practiceTileText: { fontSize: normalize(18), fontWeight: '900', color: '#7C2D12' },
   
   metricsGrid: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 15 },
   metricCard: { width: '48%', borderRadius: 20, padding: 15, alignItems: 'center', elevation: 1 },

@@ -20,7 +20,7 @@ export const REQUIRED_COVERAGE = 0.7;
 export const MIN_MOVES = 8;
 
 /** A stroke shorter than this is a tap/dot-poke, not a traced line. */
-export const MIN_STROKE_LENGTH = 60;
+export const MIN_STROKE_LENGTH = 20;
 /** A stroke needs this many samples before it counts toward completion. */
 export const MIN_STROKE_MOVES = 6;
 

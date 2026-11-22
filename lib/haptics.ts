@@ -155,6 +155,6 @@ export const haptics = {
 
   /** True when a recorded stroke is long enough to count as a real trace. */
   isRealStroke(points: { x: number; y: number }[]): boolean {
-    return points.length >= 6 && strokeLength(points) >= 60;
+    return points.length >= 6 && strokeLength(points) >= 20;
   },
 };
