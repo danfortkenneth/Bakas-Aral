@@ -1,17 +1,19 @@
 /**
- * The tracing play area.
+ * The tracing play area (upgraded).
  *
- * Visual language follows the familiar "trace the character with a buddy"
- * preschool apps: a dark teal character with a white outline, white checkpoint
- * dots, a purple patterned fill that grows exactly along the guide line, a bee
- * that follows the child's finger, and a beehive waiting at the end of the
- * current stroke.
+ * Same props and same game rules as before — the screen decides everything,
+ * this component only draws. New in this version:
+ *  - the NEXT dot pulses, reached dots pop with sparkles
+ *  - the bee springs smoothly to the finger, floats + flaps when idle, and
+ *    bounces every time a dot is reached
+ *  - an idle hint hand glides from the bee to the next dot
+ *  - confetti + a bee dance when the letter is finished
  *
- * All game rules (which dots count, coverage, undo, haptics, reward) stay in
- * the screen — this component only draws what the screen tells it to draw.
+ * Uses only React Native's built-in Animated with the native driver, so there
+ * are no extra dependencies and the motion stays smooth on low-end phones.
  */
-import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Defs, Ellipse, G, Path, Pattern, Rect } from 'react-native-svg';
 import type { HitPoint } from '../constants/traceableData';
 
@@ -19,6 +21,8 @@ const VIEW_W = 400;
 const VIEW_H = 600;
 const LETTER_WIDTH = 88;
 const OUTLINE_WIDTH = 100;
+/** Seconds of no progress before the hint hand appears. */
+const IDLE_MS = 2200;
 
 export type TraceCanvasProps = {
   width: number;
@@ -37,6 +41,141 @@ export type TraceCanvasProps = {
 
 const r = (n: number) => Math.round(n * 10) / 10;
 
+/* ----------------------------- sparkle burst ----------------------------- */
+
+const BURST_COLORS = ['#FFD166', '#FFFFFF', '#F77F67', '#A78BFA', '#4ADE80', '#38BDF8'];
+
+function Burst({ x, y, onDone }: { x: number; y: number; onDone: () => void }) {
+  const [p] = useState(() => new Animated.Value(0));
+  useEffect(() => {
+    Animated.timing(p, {
+      toValue: 1,
+      duration: 520,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: true,
+    }).start(() => onDone());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <View pointerEvents="none" style={[styles.abs, { left: x, top: y }]}>
+      {BURST_COLORS.map((color, i) => {
+        const angle = (i / BURST_COLORS.length) * Math.PI * 2;
+        return (
+          <Animated.View
+            key={i}
+            style={[
+              styles.spark,
+              {
+                backgroundColor: color,
+                opacity: p.interpolate({ inputRange: [0, 0.7, 1], outputRange: [1, 1, 0] }),
+                transform: [
+                  { translateX: p.interpolate({ inputRange: [0, 1], outputRange: [0, Math.cos(angle) * 34] }) },
+                  { translateY: p.interpolate({ inputRange: [0, 1], outputRange: [0, Math.sin(angle) * 34] }) },
+                  { scale: p.interpolate({ inputRange: [0, 0.3, 1], outputRange: [0.4, 1.2, 0.3] }) },
+                ],
+              },
+            ]}
+          />
+        );
+      })}
+    </View>
+  );
+}
+
+/* -------------------------------- confetti -------------------------------- */
+
+const CONFETTI_COLORS = ['#F77F67', '#FBBF24', '#4ADE80', '#38BDF8', '#A78BFA', '#F472B6'];
+
+function Confetti({ width, height }: { width: number; height: number }) {
+  const pieces = useState(() =>
+    Array.from({ length: 28 }, (_, i) => ({
+      left: Math.random() * width,
+      drift: (Math.random() - 0.5) * 120,
+      delay: Math.random() * 500,
+      duration: 1500 + Math.random() * 1000,
+      size: 8 + Math.random() * 6,
+      spin: 2 + Math.random() * 3,
+      color: CONFETTI_COLORS[i % CONFETTI_COLORS.length],
+      progress: new Animated.Value(0),
+    }))
+  )[0];
+
+  useEffect(() => {
+    const anims = pieces.map((piece) =>
+      Animated.timing(piece.progress, {
+        toValue: 1,
+        delay: piece.delay,
+        duration: piece.duration,
+        easing: Easing.in(Easing.quad),
+        useNativeDriver: true,
+      })
+    );
+    Animated.parallel(anims).start();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  return (
+    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+      {pieces.map((piece, i) => (
+        <Animated.View
+          key={i}
+          style={{
+            position: 'absolute',
+            left: piece.left,
+            top: -20,
+            width: piece.size,
+            height: piece.size * 0.6,
+            backgroundColor: piece.color,
+            borderRadius: 2,
+            opacity: piece.progress.interpolate({ inputRange: [0, 0.1, 0.85, 1], outputRange: [0, 1, 1, 0] }),
+            transform: [
+              { translateY: piece.progress.interpolate({ inputRange: [0, 1], outputRange: [0, height + 40] }) },
+              { translateX: piece.progress.interpolate({ inputRange: [0, 1], outputRange: [0, piece.drift] }) },
+              { rotate: piece.progress.interpolate({ inputRange: [0, 1], outputRange: ['0deg', `${piece.spin * 360}deg`] }) },
+            ],
+          }}
+        />
+      ))}
+    </View>
+  );
+}
+
+/* ---------------------------- pulsing next-dot ---------------------------- */
+
+function PulseRing({ x, y, size }: { x: number; y: number; size: number }) {
+  const [p] = useState(() => new Animated.Value(0));
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.timing(p, { toValue: 1, duration: 1100, easing: Easing.out(Easing.quad), useNativeDriver: true })
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [p]);
+
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[
+        styles.abs,
+        {
+          left: x - size / 2,
+          top: y - size / 2,
+          width: size,
+          height: size,
+          borderRadius: size / 2,
+          borderWidth: 3,
+          borderColor: '#FFFFFF',
+          opacity: p.interpolate({ inputRange: [0, 1], outputRange: [0.9, 0] }),
+          transform: [{ scale: p.interpolate({ inputRange: [0, 1], outputRange: [0.8, 2] }) }],
+        },
+      ]}
+    />
+  );
+}
+
+/* --------------------------------- screen --------------------------------- */
+
 export default function TraceCanvas({
   width,
   height,
@@ -49,6 +188,11 @@ export default function TraceCanvas({
   beePos,
   panHandlers,
 }: TraceCanvasProps) {
+  const sx = width / VIEW_W;
+  const sy = height / VIEW_H;
+  const toPx = (p: { x: number; y: number }) => ({ x: p.x * sx, y: p.y * sy });
+  const dotScale = Math.max(1, Math.min(sx, 1.6));
+
   // The first dot still waiting to be reached tells us which stroke the child
   // is on; the hive waits at that stroke's last checkpoint.
   const nextPoint = points.find((point) => !hitIds.includes(point.id));
@@ -56,19 +200,128 @@ export default function TraceCanvas({
     ? [...points].reverse().find((point) => point.strokeId === nextPoint.strokeId) ?? nextPoint
     : points[points.length - 1];
 
-  const beeX = (beePos.x / VIEW_W) * width;
-  const beeY = (beePos.y / VIEW_H) * height;
+  const bee = toPx(beePos);
+
+  /* ---- bee: spring follow, idle float, hit bounce, finish dance ---- */
+  const [beeXY] = useState(() => new Animated.ValueXY({ x: bee.x - 20, y: bee.y - 22 }));
+  const [float] = useState(() => new Animated.Value(0));
+  const [flap] = useState(() => new Animated.Value(0));
+  const [bounce] = useState(() => new Animated.Value(1));
+  const [dance] = useState(() => new Animated.Value(0));
+
+  useEffect(() => {
+    Animated.spring(beeXY, {
+      toValue: { x: bee.x - 20, y: bee.y - 22 },
+      stiffness: 260,
+      damping: 20,
+      mass: 0.6,
+      useNativeDriver: true,
+    }).start();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [bee.x, bee.y]);
+
+  useEffect(() => {
+    const floatLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(float, { toValue: 1, duration: 700, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+        Animated.timing(float, { toValue: 0, duration: 700, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+      ])
+    );
+    const flapLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(flap, { toValue: 1, duration: 90, useNativeDriver: true }),
+        Animated.timing(flap, { toValue: 0, duration: 90, useNativeDriver: true }),
+      ])
+    );
+    floatLoop.start();
+    flapLoop.start();
+    return () => {
+      floatLoop.stop();
+      flapLoop.stop();
+    };
+  }, [float, flap]);
+
+  // Bounce each time a new dot is reached.
+  const lastHitCount = useRef(hitIds.length);
+  const [bursts, setBursts] = useState<{ key: number; x: number; y: number }[]>([]);
+  const burstKey = useRef(0);
+  const seenHits = useRef<Set<number>>(new Set(hitIds));
+
+  useEffect(() => {
+    if (hitIds.length < lastHitCount.current) {
+      // undo / reset
+      seenHits.current = new Set(hitIds);
+      setBursts([]);
+    } else if (hitIds.length > lastHitCount.current) {
+      const fresh = hitIds.filter((id) => !seenHits.current.has(id));
+      fresh.forEach((id) => seenHits.current.add(id));
+      const added = fresh
+        .map((id) => points.find((p) => p.id === id))
+        .filter(Boolean)
+        .map((p) => ({ key: ++burstKey.current, x: p!.x * sx, y: p!.y * sy }));
+      if (added.length) setBursts((prev) => [...prev, ...added]);
+      Animated.sequence([
+        Animated.timing(bounce, { toValue: 1.35, duration: 110, useNativeDriver: true }),
+        Animated.spring(bounce, { toValue: 1, friction: 4, tension: 160, useNativeDriver: true }),
+      ]).start();
+    }
+    lastHitCount.current = hitIds.length;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hitIds.length]);
+
+  useEffect(() => {
+    if (!isFinished) {
+      dance.setValue(0);
+      return;
+    }
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(dance, { toValue: 1, duration: 260, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+        Animated.timing(dance, { toValue: -1, duration: 520, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+        Animated.timing(dance, { toValue: 0, duration: 260, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [isFinished, dance]);
+
+  /* ---- idle hint hand ---- */
+  // A token that only becomes true for the latest activity. No synchronous
+  // setState inside the effect: the timer is the sole writer.
+  const activityKey = `${beePos.x},${beePos.y},${hitIds.length}`;
+  const [idleKey, setIdleKey] = useState<string | null>(null);
+  useEffect(() => {
+    if (isFinished) return;
+    const key = activityKey;
+    const timer = setTimeout(() => setIdleKey(key), IDLE_MS);
+    return () => clearTimeout(timer);
+  }, [activityKey, isFinished]);
+
+  const [handProgress] = useState(() => new Animated.Value(0));
+  const showHand = idleKey === activityKey && !isFinished && !!nextPoint;
+  useEffect(() => {
+    if (!showHand) return;
+    handProgress.setValue(0);
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(handProgress, { toValue: 1, duration: 1300, easing: Easing.inOut(Easing.cubic), useNativeDriver: true }),
+        Animated.delay(350),
+        Animated.timing(handProgress, { toValue: 0, duration: 0, useNativeDriver: true }),
+        Animated.delay(250),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [showHand, nextPoint?.id, handProgress]);
+
+  const nextPx = nextPoint ? toPx(nextPoint) : null;
+  const handFrom = bee;
 
   return (
     <View style={[{ width, height }, styles.wrapper]} {...panHandlers}>
       <Svg width={width} height={height} viewBox={`0 0 ${VIEW_W} ${VIEW_H}`} style={styles.svg}>
         <Defs>
-          <Pattern
-            id="traceSwirl"
-            width={30}
-            height={30}
-            patternUnits="userSpaceOnUse"
-          >
+          <Pattern id="traceSwirl" width={30} height={30} patternUnits="userSpaceOnUse">
             <Rect width={30} height={30} fill="#4B32C3" />
             <Circle cx={15} cy={15} r={8} fill="none" stroke="#7660E5" strokeWidth={4} />
             <Circle cx={0} cy={0} r={3} fill="#7660E5" />
@@ -83,14 +336,7 @@ export default function TraceCanvas({
         <Ellipse cx="200" cy="720" rx="320" ry="140" fill="#B9E88F" opacity={0.55} />
 
         {/* Character: white sticker outline + dark teal body */}
-        <Path
-          d={path}
-          fill="none"
-          stroke="#FFFFFF"
-          strokeWidth={OUTLINE_WIDTH}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
+        <Path d={path} fill="none" stroke="#FFFFFF" strokeWidth={OUTLINE_WIDTH} strokeLinecap="round" strokeLinejoin="round" />
         <Path
           d={path}
           fill="none"
@@ -100,43 +346,30 @@ export default function TraceCanvas({
           strokeLinejoin="round"
         />
 
-        {/* Traced area: solid purple base + decorative swirl pattern on top */}
+        {/* Traced area: solid purple base + swirl pattern + soft highlight */}
         {fillPaths.map((fillPath, index) => (
           <React.Fragment key={index}>
-            <Path
-              d={fillPath}
-              fill="none"
-              stroke="#4B32C3"
-              strokeWidth={LETTER_WIDTH}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-            <Path
-              d={fillPath}
-              fill="none"
-              stroke="url(#traceSwirl)"
-              strokeWidth={LETTER_WIDTH}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              opacity={0.7}
-            />
+            <Path d={fillPath} fill="none" stroke="#4B32C3" strokeWidth={LETTER_WIDTH} strokeLinecap="round" strokeLinejoin="round" />
+            <Path d={fillPath} fill="none" stroke="url(#traceSwirl)" strokeWidth={LETTER_WIDTH} strokeLinecap="round" strokeLinejoin="round" opacity={0.7} />
+            <Path d={fillPath} fill="none" stroke="#FFFFFF" strokeWidth={10} strokeLinecap="round" strokeLinejoin="round" opacity={0.14} />
           </React.Fragment>
         ))}
 
-        {/* Checkpoints ahead of the finger; reached ones simply disappear */}
+        {/* Checkpoints: only the current stroke's dots, close together and in order */}
         {!isFinished &&
           points.map((point) => {
             if (hitIds.includes(point.id)) return null;
-            const isStart = point.id === points[0]?.id;
+            if (nextPoint && point.strokeId !== nextPoint.strokeId) return null;
+            const isNext = point.id === nextPoint?.id;
             return (
               <Circle
                 key={point.id}
                 cx={point.x}
                 cy={point.y}
-                r={isStart ? 13 : 11}
+                r={isNext ? 12 : 10}
                 fill="#FFFFFF"
-                stroke="#0E5C5C"
-                strokeWidth={3}
+                stroke={isNext ? '#FBBF24' : '#0E5C5C'}
+                strokeWidth={isNext ? 4 : 3}
               />
             );
           })}
@@ -155,30 +388,71 @@ export default function TraceCanvas({
 
         {/* Gentle red rim if the finger leaves the writing lane */}
         {!isOnPath && !isFinished && (
-          <Rect
-            x={4}
-            y={4}
-            width={VIEW_W - 8}
-            height={VIEW_H - 8}
-            rx={26}
-            fill="none"
-            stroke="#EF4444"
-            strokeWidth={8}
-            opacity={0.45}
-          />
+          <Rect x={4} y={4} width={VIEW_W - 8} height={VIEW_H - 8} rx={26} fill="none" stroke="#EF4444" strokeWidth={8} opacity={0.45} />
         )}
       </Svg>
 
-      {/* Bee buddy — rides the finger, sits on the first dot until the child starts */}
-      <View
+      {/* Pulse ring on the next dot */}
+      {!isFinished && nextPx && <PulseRing key={nextPoint!.id} x={nextPx.x} y={nextPx.y} size={22 * dotScale} />}
+
+      {/* Sparkle bursts on reached dots */}
+      {bursts.map((b) => (
+        <Burst
+          key={b.key}
+          x={b.x}
+          y={b.y}
+          onDone={() => setBursts((prev) => prev.filter((item) => item.key !== b.key))}
+        />
+      ))}
+
+      {/* Hint hand: glides from the bee to the next dot when the child is idle */}
+      {showHand && nextPx && (
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            styles.abs,
+            {
+              left: 0,
+              top: 0,
+              opacity: handProgress.interpolate({ inputRange: [0, 0.1, 0.9, 1], outputRange: [0, 1, 1, 0] }),
+              transform: [
+                { translateX: handProgress.interpolate({ inputRange: [0, 1], outputRange: [handFrom.x - 6, nextPx.x - 6] }) },
+                { translateY: handProgress.interpolate({ inputRange: [0, 1], outputRange: [handFrom.y + 4, nextPx.y + 4] }) },
+              ],
+            },
+          ]}
+        >
+          <Text style={styles.hand}>👆</Text>
+        </Animated.View>
+      )}
+
+      {/* Bee buddy */}
+      <Animated.View
         pointerEvents="none"
         style={[
           styles.bee,
-          { left: beeX - 20, top: beeY - 22 },
+          {
+            transform: [
+              { translateX: beeXY.x },
+              { translateY: beeXY.y },
+              { translateY: float.interpolate({ inputRange: [0, 1], outputRange: [0, -4] }) },
+              { scale: bounce },
+              { rotate: dance.interpolate({ inputRange: [-1, 0, 1], outputRange: ['-18deg', '0deg', '18deg'] }) },
+            ],
+          },
         ]}
       >
-        <Text style={styles.beeEmoji}>🐝</Text>
-      </View>
+        <Animated.Text
+          style={[
+            styles.beeEmoji,
+            { transform: [{ scaleX: flap.interpolate({ inputRange: [0, 1], outputRange: [1, 0.9] }) }] },
+          ]}
+        >
+          🐝
+        </Animated.Text>
+      </Animated.View>
+
+      {isFinished && <Confetti width={width} height={height} />}
     </View>
   );
 }
@@ -197,8 +471,13 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
   },
   svg: { backgroundColor: 'transparent' },
+  abs: { position: 'absolute' },
+  spark: { position: 'absolute', width: 8, height: 8, borderRadius: 4, marginLeft: -4, marginTop: -4 },
+  hand: { fontSize: 38 },
   bee: {
     position: 'absolute',
+    left: 0,
+    top: 0,
     width: 40,
     height: 44,
     alignItems: 'center',

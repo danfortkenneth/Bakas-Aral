@@ -230,6 +230,7 @@ export default function BakasScreen() {
     strokePoints.current.pop();
     setPaths((prev) => prev.slice(0, -1));
     rebuildProgress();
+    setIsOnPath(true);
     lastHapticPoint.current = null;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
@@ -298,14 +299,20 @@ export default function BakasScreen() {
     if (!studentId) return;
     setSaving(true);
     try {
-      await addDoc(collection(db, "sessions"), {
-        userId: studentId,
-        letterOrNumber: selectedChar,
-        accuracy: finalAccuracy,
-        timestamp: new Date().toISOString(),
-        unlockedSticker: selectedChar,
-        starsEarned: finalAccuracy >= 90 ? 3 : (finalAccuracy >= 75 ? 2 : 1)
-      });
+      // Offline, Firestore queues the write and addDoc only resolves once back
+      // online, which would leave the Continue button stuck on a spinner.
+      // So stop waiting after 3s; the write still syncs later.
+      await Promise.race([
+        addDoc(collection(db, "sessions"), {
+          userId: studentId,
+          letterOrNumber: selectedChar,
+          accuracy: finalAccuracy,
+          timestamp: new Date().toISOString(),
+          unlockedSticker: selectedChar,
+          starsEarned: finalAccuracy >= 90 ? 3 : (finalAccuracy >= 75 ? 2 : 1)
+        }),
+        new Promise((resolve) => setTimeout(resolve, 3000)),
+      ]);
     } catch (error) {
       console.error("Error saving tracing session history:", error);
     } finally {
@@ -457,6 +464,13 @@ export default function BakasScreen() {
     tryFinish();
   };
 
+  // PanResponder is created once, so it must call the *latest* handlers
+  // (otherwise it keeps using the first character's data after selectedChar changes).
+  const handlersRef = useRef({ registerTouch, tryFinish });
+  useEffect(() => {
+    handlersRef.current = { registerTouch, tryFinish };
+  });
+
   // PanResponder callbacks run in gesture handlers, not during render; refs are safe here.
   // eslint-disable-next-line react-hooks/refs
   const [panResponder] = useState(() =>
@@ -473,7 +487,7 @@ export default function BakasScreen() {
         lastHapticPoint.current = { x: svgX, y: svgY };
         lastHapticTime.current = Date.now();
         setPaths((prev) => [...prev, `M${svgX.toFixed(1)},${svgY.toFixed(1)}`]);
-        registerTouch(svgX, svgY);
+        handlersRef.current.registerTouch(svgX, svgY);
 
         if (phoneticPlayerRef.current) {
           try { phoneticPlayerRef.current.play(); } catch {}
@@ -495,14 +509,15 @@ export default function BakasScreen() {
           updated[updated.length - 1] = `${updated[updated.length - 1]} L${svgX.toFixed(1)},${svgY.toFixed(1)}`;
           return updated;
         });
-        registerTouch(svgX, svgY);
+        handlersRef.current.registerTouch(svgX, svgY);
       },
 
       onPanResponderRelease: () => {
         if (phoneticPlayerRef.current) {
           try { phoneticPlayerRef.current.pause(); } catch {}
         }
-        tryFinish();
+        setIsOnPath(true);
+        handlersRef.current.tryFinish();
       },
 
       // Android can steal the gesture (notification, parent scroll). Without this
@@ -511,7 +526,8 @@ export default function BakasScreen() {
         if (phoneticPlayerRef.current) {
           try { phoneticPlayerRef.current.pause(); } catch {}
         }
-        tryFinish();
+        setIsOnPath(true);
+        handlersRef.current.tryFinish();
       },
     })
   );

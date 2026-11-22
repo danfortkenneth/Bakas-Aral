@@ -99,19 +99,48 @@ function pointAtDistance(stroke: TracePoint[], distance: number): TracePoint {
 }
 
 /**
- * Spreads hit points evenly along a stroke by arc length.
- * A closed loop (start ~= end) contributes `count - 1` unique points.
+ * Spreads hit points evenly along a stroke by arc length. Dots are deliberately
+ * close together (~55 viewBox units) so a long stroke shows a clear "connect
+ * the dots" trail like the preschool tracing apps do. A closed loop (start ~=
+ * end) contributes `count - 1` unique points.
  */
+const DOT_SPACING = 55;
+const MAX_DOTS_PER_STROKE = 18;
+
 function sampleStroke(stroke: TracePoint[]): TracePoint[] {
   const total = strokeLength(stroke);
   if (total < 1) return [stroke[0]];
 
-  const count = Math.min(5, Math.max(2, Math.round(total / 140)));
+  const count = Math.min(MAX_DOTS_PER_STROKE, Math.max(2, Math.round(total / DOT_SPACING)));
   const samples: TracePoint[] = [];
   for (let i = 0; i < count; i++) {
     samples.push(pointAtDistance(stroke, (total * i) / (count - 1)));
   }
   return samples;
+}
+
+/**
+ * Splits a stroke into short segments. Long single-piece segments would make a
+ * single touch count as "the whole stroke traced", which both inflates accuracy
+ * and fills the entire character with colour too early.
+ */
+function densifyStroke(stroke: TracePoint[], spacing = 16): TracePoint[] {
+  if (stroke.length < 2) return stroke;
+
+  const result: TracePoint[] = [stroke[0]];
+  for (let i = 1; i < stroke.length; i++) {
+    const a = stroke[i - 1];
+    const b = stroke[i];
+    const length = Math.hypot(b.x - a.x, b.y - a.y);
+    const steps = Math.max(1, Math.ceil(length / spacing));
+    for (let s = 1; s <= steps; s++) {
+      result.push({
+        x: a.x + ((b.x - a.x) * s) / steps,
+        y: a.y + ((b.y - a.y) * s) / steps,
+      });
+    }
+  }
+  return result;
 }
 
 /** Converts stroke definitions into SVG path data + hit points + segments. */
@@ -130,7 +159,7 @@ export function buildCharacter(strokes: TracePoint[][]): TraceCharacter {
     .join(' ');
 
   const segments: TraceSegment[] = [];
-  for (const stroke of denseStrokes) {
+  for (const stroke of denseStrokes.map((stroke) => densifyStroke(stroke))) {
     for (let i = 0; i < stroke.length - 1; i++) {
       segments.push({
         x1: r(stroke[i].x),
