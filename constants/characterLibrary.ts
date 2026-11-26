@@ -83,12 +83,21 @@ export const PHONETIC_PHRASES: Record<string, { ph: string; en: string }> = Obje
   })
 );
 
+/** Filipino anchor words, one per active character. */
+const FILIPINO_WORDS: Record<string, string> = {
+  A: 'Aso',
+  B: 'Bahay',
+  C: 'Cake',
+  '1': 'Isa',
+  '2': 'Dalawa',
+};
+
 /** What the side avatar says right after a character is finished. */
 export const FINISH_PHRASES: Record<string, { ph: string; en: string }> = Object.fromEntries(
   ALL_CHARACTERS.map((character) => [
     character,
     {
-      ph: `${character} para sa ${ANCHOR_WORDS[character] ?? character}! Ang galing mo!`,
+      ph: `${character} para sa ${FILIPINO_WORDS[character] ?? ANCHOR_WORDS[character] ?? character}! Ang galing mo!`,
       en: `${character} for ${ENGLISH_WORDS[character] ?? ANCHOR_WORDS[character] ?? character}! Great job!`,
     },
   ])

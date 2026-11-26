@@ -15,7 +15,7 @@
  * are no extra dependencies and the motion stays smooth on low-end phones.
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Easing, StyleSheet, Text, View } from 'react-native';
+import { Animated, Easing, Image, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Defs, Ellipse, G, Path, Pattern, Rect } from 'react-native-svg';
 import type { HitPoint } from '../constants/traceableData';
 import { samplePolyline } from '../lib/tracing';
@@ -44,6 +44,8 @@ export type TraceCanvasProps = {
   color?: string;
   /** Incremented on the child's first touch — stops the auto-demo bee. */
   demoToken?: number;
+  /** Anchor artwork revealed one-by-one at the old dot positions after finishing. */
+  anchorImage?: number;
   panHandlers: any;
 };
 
@@ -196,6 +198,7 @@ export default function TraceCanvas({
   beePos,
   color = '#0E5C5C',
   demoToken = 0,
+  anchorImage,
   panHandlers,
 }: TraceCanvasProps) {
   const sx = width / VIEW_W;
@@ -250,6 +253,25 @@ export default function TraceCanvas({
     outputRange: demoPoints.map((point) => point.y * sy - 22),
     extrapolate: 'clamp',
   });
+
+  /* ---- anchor reveal: dots turn into the anchor word image, one by one ---- */
+  const [anchorAnims] = useState(() => points.map(() => new Animated.Value(0)));
+  useEffect(() => {
+    if (!isFinished || !anchorImage) {
+      anchorAnims.forEach((value) => value.setValue(0));
+      return;
+    }
+    const sequence = Animated.parallel(
+      anchorAnims.map((value, index) =>
+        Animated.sequence([
+          Animated.delay(1200 + index * 110),
+          Animated.spring(value, { toValue: 1, friction: 5, tension: 120, useNativeDriver: true }),
+        ])
+      )
+    );
+    sequence.start();
+    return () => sequence.stop();
+  }, [isFinished, anchorImage, anchorAnims]);
 
   /* ---- bee: spring follow, idle float, hit bounce, finish dance ---- */
   const [beeXY] = useState(() => new Animated.ValueXY({ x: bee.x - 20, y: bee.y - 22 }));
@@ -452,6 +474,25 @@ export default function TraceCanvas({
         )}
       </Svg>
 
+      {/* Anchor images replace the dots one by one after the finish line */}
+      {isFinished && anchorImage && points.map((point, index) => (
+        <Animated.View
+          key={`anchor-${point.id}`}
+          pointerEvents="none"
+          style={[
+            styles.anchorImage,
+            {
+              left: point.x * sx - 13,
+              top: point.y * sy - 13,
+              opacity: anchorAnims[index],
+              transform: [{ scale: anchorAnims[index] }],
+            },
+          ]}
+        >
+          <Image source={anchorImage} style={styles.anchorImageArt} resizeMode="contain" />
+        </Animated.View>
+      ))}
+
       {/* Pulse ring on the next dot */}
       {!isFinished && nextPx && <PulseRing key={nextPoint!.id} x={nextPx.x} y={nextPx.y} size={22 * dotScale} />}
 
@@ -543,6 +584,8 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
   },
   svg: { backgroundColor: 'transparent' },
+  anchorImage: { position: 'absolute', width: 26, height: 26, alignItems: 'center', justifyContent: 'center' },
+  anchorImageArt: { width: 26, height: 26 },
   abs: { position: 'absolute' },
   spark: { position: 'absolute', width: 8, height: 8, borderRadius: 4, marginLeft: -4, marginTop: -4 },
   hand: { fontSize: 38 },

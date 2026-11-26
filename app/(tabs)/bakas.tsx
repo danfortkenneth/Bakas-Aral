@@ -610,6 +610,7 @@ export default function BakasScreen() {
 
         <View style={[styles.canvasArea, { paddingBottom: TAB_BAR_SPACE }]}>
           <TraceCanvas
+            key={selectedChar}
             width={canvas.width}
             height={canvas.height}
             path={charData.path}
@@ -621,6 +622,9 @@ export default function BakasScreen() {
             beePos={beePos}
             color={LETTER_COLORS[selectedChar] ?? '#0E5C5C'}
             demoToken={demoToken}
+            anchorImage={selectedChar === 'A'
+              ? (lang === 'ph' ? require('../../assets/images/aso.png') : require('../../assets/images/apple.png'))
+              : undefined}
             panHandlers={panResponder.panHandlers}
           />
           <SpeakingAvatar

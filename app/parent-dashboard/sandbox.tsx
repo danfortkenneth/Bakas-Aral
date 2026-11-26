@@ -635,6 +635,7 @@ export default function SandboxScreen() {
 
         <View style={styles.canvasArea}>
           <TraceCanvas
+            key={selectedChar}
             width={canvas.width}
             height={canvas.height}
             path={charData.path}
@@ -646,6 +647,9 @@ export default function SandboxScreen() {
             beePos={beePos}
             color={LETTER_COLORS[selectedChar] ?? '#0E5C5C'}
             demoToken={demoToken}
+            anchorImage={selectedChar === 'A'
+              ? (lang === 'ph' ? require('../../assets/images/aso.png') : require('../../assets/images/apple.png'))
+              : undefined}
             panHandlers={panResponder.panHandlers}
           />
           <SpeakingAvatar

@@ -2,6 +2,7 @@ import { Stack, useRouter, useSegments } from 'expo-router';
 import { createContext, useState, useContext, useEffect, useRef } from 'react';
 import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { loadHapticsSetting } from '../lib/haptics';
 import { auth, db } from '../lib/firebase';
 import { onAuthStateChanged, User } from 'firebase/auth';
@@ -41,6 +42,7 @@ export default function RootLayout() {
     avatar: null,
   });
   const [loading, setLoading] = useState(true);
+  const [hasConsent, setHasConsent] = useState<boolean | null>(null);
   const langRef = useRef(lang);
 
   useEffect(() => {
@@ -49,6 +51,20 @@ export default function RootLayout() {
 
   useEffect(() => {
     loadHapticsSetting();
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    AsyncStorage.getItem('@bakas_consent')
+      .then((value) => {
+        if (active) setHasConsent(value === 'true');
+      })
+      .catch(() => {
+        if (active) setHasConsent(false);
+      });
+    return () => {
+      active = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -111,6 +127,12 @@ export default function RootLayout() {
     const isAuthRoute = !rootGroup || rootGroup === '(auth)';
     const inTabs = rootGroup === '(tabs)';
 
+    // 0. Privacy notice must be accepted once before anything else.
+    if (hasConsent === false && rootGroup !== 'onboarding') {
+      router.replace('/onboarding');
+      return;
+    }
+
     // 1. Kapag hindi naka-login (o nag-logout) at nasa loob ng tabs:
     // Rekta sa User Selection screen para malayang makapili uli ng Role (Teacher/Admin/Parent)
     if (!firebaseUser && inTabs) {
@@ -123,7 +145,7 @@ export default function RootLayout() {
     if (firebaseUser && isAuthRoute && userData?.status === 'approved') {
       router.replace('/(tabs)');
     }
-  }, [firebaseUser, userData, loading, segments, router]);
+  }, [firebaseUser, userData, loading, hasConsent, segments, router]);
 
   // Visual Loader habang nagse-sync sa Firebase
   if (loading) {
@@ -140,6 +162,7 @@ export default function RootLayout() {
         <UserContext.Provider value={{ firebaseUser, userData, activeStudent, loading }}>
           <Stack screenOptions={{ headerShown: false }}>
             <Stack.Screen name="index" />
+          <Stack.Screen name="onboarding" />
             <Stack.Screen name="(auth)/user-selection" />
             <Stack.Screen name="(auth)/login" />
             <Stack.Screen name="(auth)/signup" />
