@@ -44,6 +44,8 @@ export type TraceCanvasProps = {
   color?: string;
   /** Incremented on the child's first touch — stops the auto-demo bee. */
   demoToken?: number;
+  /** Incremented after the finish voice ends — starts the anchor image reveal. */
+  revealSignal?: number;
   /** Anchor artwork revealed one-by-one at the old dot positions after finishing. */
   anchorImage?: number;
   panHandlers: any;
@@ -198,6 +200,7 @@ export default function TraceCanvas({
   beePos,
   color = '#0E5C5C',
   demoToken = 0,
+  revealSignal = 0,
   anchorImage,
   panHandlers,
 }: TraceCanvasProps) {
@@ -257,21 +260,21 @@ export default function TraceCanvas({
   /* ---- anchor reveal: dots turn into the anchor word image, one by one ---- */
   const [anchorAnims] = useState(() => points.map(() => new Animated.Value(0)));
   useEffect(() => {
-    if (!isFinished || !anchorImage) {
+    if (!isFinished || !anchorImage || revealSignal === 0) {
       anchorAnims.forEach((value) => value.setValue(0));
       return;
     }
     const sequence = Animated.parallel(
       anchorAnims.map((value, index) =>
         Animated.sequence([
-          Animated.delay(1200 + index * 110),
+          Animated.delay(index * 110),
           Animated.spring(value, { toValue: 1, friction: 5, tension: 120, useNativeDriver: true }),
         ])
       )
     );
     sequence.start();
     return () => sequence.stop();
-  }, [isFinished, anchorImage, anchorAnims]);
+  }, [isFinished, anchorImage, revealSignal, anchorAnims]);
 
   /* ---- bee: spring follow, idle float, hit bounce, finish dance ---- */
   const [beeXY] = useState(() => new Animated.ValueXY({ x: bee.x - 20, y: bee.y - 22 }));

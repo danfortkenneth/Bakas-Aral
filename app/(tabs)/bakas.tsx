@@ -90,6 +90,8 @@ export default function BakasScreen() {
     en: `Follow the white dots to make ${selectedChar}. Start at the bee!`,
   }));
   const [avatarTrigger, setAvatarTrigger] = useState(0);
+  /** Increments when the finish voice ends, so the image reveal waits for it. */
+  const [revealSignal, setRevealSignal] = useState(0);
   const [demoToken, setDemoToken] = useState(0);
 
   /** Lines are rebuilt from the current character so the avatar stays in sync. */
@@ -182,6 +184,12 @@ export default function BakasScreen() {
   const lastWarnTime = useRef<number>(0);
 
   const errorPlayerRef = useRef<any>(null);
+  /** Recorded A voice lines: letter at start, praise at the halfway point. */
+  const letterAudioRef = useRef<any>(null);
+  const praiseAudioRef = useRef<any>(null);
+  const arawAudioRef = useRef<any>(null);
+  const revealTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const praisePlayedRef = useRef(false);
   const lastErrorSoundTime = useRef<number>(0);
   const onPathRef = useRef(true);
 
@@ -228,6 +236,9 @@ export default function BakasScreen() {
     totalMoves.current = 0;
     errorMoves.current = 0;
     finishedRef.current = false;
+    praisePlayedRef.current = false;
+    setRevealSignal(0);
+    if (revealTimerRef.current) clearTimeout(revealTimerRef.current);
     coveredSegments.current.clear();
   fillSegments.current.clear();
   fillStrokeLock.current = null;
@@ -269,6 +280,15 @@ export default function BakasScreen() {
   useEffect(() => {
     try {
       errorPlayerRef.current = createAudioPlayer(require('../../assets/sounds/error.mp3'));
+      letterAudioRef.current = createAudioPlayer(require('../../assets/sounds/voice/LETRA A.m4a'));
+      praiseAudioRef.current = createAudioPlayer(require('../../assets/sounds/voice/MAHUSAY!.m4a'));
+      arawAudioRef.current = createAudioPlayer(require('../../assets/sounds/voice/ARAW.m4a'));
+      arawAudioRef.current.addListener('playbackStatusUpdate', (status: any) => {
+        if (status.didJustFinish) {
+          if (revealTimerRef.current) clearTimeout(revealTimerRef.current);
+          setRevealSignal((value) => value + 1);
+        }
+      });
     } catch (e) {
       console.log("Error initializing static audio players:", e);
     }
@@ -276,6 +296,10 @@ export default function BakasScreen() {
     return () => {
       try {
         if (errorPlayerRef.current) errorPlayerRef.current.remove();
+        if (letterAudioRef.current) letterAudioRef.current.remove();
+        if (praiseAudioRef.current) praiseAudioRef.current.remove();
+        if (arawAudioRef.current) arawAudioRef.current.remove();
+        if (revealTimerRef.current) clearTimeout(revealTimerRef.current);
       } catch {}
     };
   }, []);
@@ -355,8 +379,21 @@ export default function BakasScreen() {
     setEarnedStars(stars);
     setIsFinished(true);
     setIsOnPath(true);
-    setAvatarLine(FINISH_PHRASES[selectedChar] ?? successLine());
-    setAvatarTrigger((value) => value + 1);
+
+    if (selectedChar === 'A' && arawAudioRef.current) {
+      // Recorded finish line — the image reveal waits for it to end.
+      try {
+        arawAudioRef.current.seekTo(0);
+        arawAudioRef.current.play();
+        revealTimerRef.current = setTimeout(() => setRevealSignal((value) => value + 1), 10000);
+      } catch {
+        setRevealSignal((value) => value + 1);
+      }
+    } else {
+      setAvatarLine(FINISH_PHRASES[selectedChar] ?? successLine());
+      setAvatarTrigger((value) => value + 1);
+      revealTimerRef.current = setTimeout(() => setRevealSignal((value) => value + 1), 1200);
+    }
 
     haptics.replayStrokes(strokePoints.current);
     haptics.finished();
@@ -422,6 +459,17 @@ export default function BakasScreen() {
     if (gainedDot) {
       setHitIds([...hitPoints.current]);
       haptics.checkpoint();
+
+      // Recorded praise halfway through A (after half the guide dots).
+      if (
+        selectedChar === 'A' &&
+        !praisePlayedRef.current &&
+        hitPoints.current.length >= Math.ceil(hitsNeeded / 2) &&
+        praiseAudioRef.current
+      ) {
+        praisePlayedRef.current = true;
+        try { praiseAudioRef.current.seekTo(0); praiseAudioRef.current.play(); } catch {}
+      }
     }
 
     // 2. Track coverage + check the finger is still inside the writing lane.
@@ -490,7 +538,13 @@ export default function BakasScreen() {
         const { locationX, locationY } = evt.nativeEvent;
         const svgX = (locationX / canvasRef.current.width) * 400;
         const svgY = (locationY / canvasRef.current.height) * 600;
-        if (strokePoints.current.length === 0) handlersRef.current.announcePhonetic();
+        if (strokePoints.current.length === 0) {
+          if (selectedChar === 'A' && letterAudioRef.current) {
+            try { letterAudioRef.current.seekTo(0); letterAudioRef.current.play(); } catch {}
+          } else {
+            handlersRef.current.announcePhonetic();
+          }
+        }
         setDemoToken(1);
         strokePoints.current.push([{ x: svgX, y: svgY }]);
         fillStrokeLock.current = null;
@@ -622,6 +676,7 @@ export default function BakasScreen() {
             beePos={beePos}
             color={LETTER_COLORS[selectedChar] ?? '#0E5C5C'}
             demoToken={demoToken}
+            revealSignal={revealSignal}
             anchorImage={selectedChar === 'A'
               ? (lang === 'ph' ? require('../../assets/images/aso.png') : require('../../assets/images/apple.png'))
               : undefined}
