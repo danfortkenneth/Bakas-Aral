@@ -36,6 +36,13 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const scale = scaleFor(SCREEN_WIDTH);
 const normalize = (size: number) => Math.round(PixelRatio.roundToNearestPixel(size * scale));
 
+const LEARNING_OUTCOMES = [
+  { icon: 'sparkles', en: 'Letter recognition', ph: 'Pagkilala sa titik', enDetail: 'Home grid + tracing', phDetail: 'Grid at pagbakas' },
+  { icon: 'hand-left', en: 'Fine motor skills', ph: 'Kasanayan ng kamay', enDetail: 'Stroke coverage + dots', phDetail: 'Guhit at mga tuldok' },
+  { icon: 'musical-notes', en: 'Phonological awareness', ph: 'Pagkilala sa tunog', enDetail: 'Avatar sounds + voice', phDetail: 'Tunog ng avatar' },
+  { icon: 'book-outline', en: 'Vocabulary', ph: 'Bokabolaryo', enDetail: 'Anchor word reveal', phDetail: 'Salitang-ugat' },
+];
+
 const ANIMAL_AVATARS = [
   { id: 'lion', emoji: '🦁' }, { id: 'bear', emoji: '🐻' }, { id: 'rabbit', emoji: '🐰' },
   { id: 'tiger', emoji: '🐯' }, { id: 'koala', emoji: '🐨' }, { id: 'panda', emoji: '🐼' },
@@ -459,6 +466,28 @@ export default function TeacherScreen() {
           </TouchableOpacity>
         </View>
 
+        {/* LEARNING OUTCOMES — visible to teachers and panelists */}
+        <View style={styles.outcomesCard}>
+          <Text style={styles.outcomesTitle}>
+            {lang === 'ph' ? 'Mga Layunin sa Pagkatuto' : 'Learning Outcomes'}
+          </Text>
+          <Text style={styles.outcomesSub}>
+            {lang === 'ph'
+              ? 'Bawat aktibidad ay may malinaw na layunin.'
+              : 'Every activity maps to a measurable goal.'}
+          </Text>
+          {LEARNING_OUTCOMES.map((item) => (
+            <View key={item.en} style={styles.outcomeRow}>
+              <Ionicons name={item.icon as any} size={17} color="#F77F67" style={{ marginRight: 10 }} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.outcomeName}>{lang === 'ph' ? item.ph : item.en}</Text>
+                <Text style={styles.outcomeDetail}>{lang === 'ph' ? item.phDetail : item.enDetail}</Text>
+              </View>
+              <Ionicons name="checkmark-circle" size={16} color="#16A34A" />
+            </View>
+          ))}
+        </View>
+
         <View style={styles.settingsList}>
           <TouchableOpacity style={styles.settingRow} onPress={() => setLang(lang === 'ph' ? 'en' : 'ph')}>
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
@@ -738,6 +767,12 @@ const styles = StyleSheet.create({
   saveStudentBtn: { backgroundColor: '#4ADE80', padding: 12, borderRadius: 10, width: '45%', alignItems: 'center' },
 
   settingsList: { backgroundColor: 'white', borderRadius: 25, padding: 15, marginBottom: 15 },
+  outcomesCard: { backgroundColor: 'white', borderRadius: 25, padding: 18, marginBottom: 15, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 5 },
+  outcomesTitle: { fontSize: normalize(14), fontWeight: '900', color: '#1F2937' },
+  outcomesSub: { fontSize: normalize(10), color: '#9CA3AF', marginTop: 2, marginBottom: 12 },
+  outcomeRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 7 },
+  outcomeName: { fontSize: normalize(12), fontWeight: '800', color: '#374151' },
+  outcomeDetail: { fontSize: normalize(10), color: '#9CA3AF', marginTop: 1 },
   settingRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 8 },
 
   qrContainerCard: { backgroundColor: 'white', borderRadius: 25, padding: 20, marginBottom: 15 },

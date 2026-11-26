@@ -198,6 +198,29 @@ The app is portrait-only and works from 320 dp phones up to 12.9" tablets:
 - **Teacher / Guro** — manage classes and track each child's accuracy
 - **System Admin** — manage system settings and accounts
 
+## Learning outcomes
+
+Every activity maps to a measurable goal. This map is shown in the Teacher
+Dashboard and is the basis for the progress indicators.
+
+| Outcome | How the app measures it | Where it appears |
+|---|---|---|
+| Letter recognition | Correct letter chosen and traced | Home grid, tracing screen |
+| Fine motor skills | Stroke coverage, all dots reached, movement samples | `analyseStrokes()` in `lib/tracing.ts` |
+| Phonological awareness | Avatar says the sound twice at trace start | `PHONETIC_PHRASES`, `SpeakingAvatar` |
+| Vocabulary | Anchor word revealed at the traced dots | `FINISH_PHRASES`, anchor images |
+
+Completion is deliberately strict enough to prove real tracing: every guide dot,
+≥70 % coverage, ≥8 move samples, every stroke traced, and isolated dot taps are
+ignored.
+
+## Quality assurance
+
+See [`docs/QA_CHECKLIST.md`](docs/QA_CHECKLIST.md) for the device matrix,
+functional test cases, reproducible tracing simulation, and the 3-minute panel
+demo script. Run `node scripts/simulate-tracing.js` to verify the completion
+rules without a device.
+
 ## Troubleshooting
 
 **Metro cache issues**
