@@ -703,7 +703,7 @@ export default function SandboxScreen() {
             demoToken={demoToken}
             revealSignal={revealSignal}
             anchorImage={selectedChar === 'A'
-              ? (lang === 'ph' ? require('../../assets/images/aso.png') : require('../../assets/images/apple.png'))
+              ? (lang === 'ph' ? require('../../assets/images/araw.png') : require('../../assets/images/apple.png'))
               : undefined}
             panHandlers={panResponder.panHandlers}
           />

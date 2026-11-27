@@ -85,7 +85,7 @@ export const PHONETIC_PHRASES: Record<string, { ph: string; en: string }> = Obje
 
 /** Filipino anchor words, one per active character. */
 const FILIPINO_WORDS: Record<string, string> = {
-  A: 'Aso',
+  A: 'Araw',
   B: 'Bahay',
   C: 'Cake',
   '1': 'Isa',

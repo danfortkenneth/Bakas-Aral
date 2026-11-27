@@ -198,6 +198,10 @@ The app is portrait-only and works from 320 dp phones up to 12.9" tablets:
 - **Teacher / Guro** — manage classes and track each child's accuracy
 - **System Admin** — manage system settings and accounts
 
+Children never sign in. Auth exists only for adult roles and for ownership of
+progress records. In production the app is intended for the New Era community
+with an approval gate; for presentations, open the tracing screen directly.
+
 ## Learning outcomes
 
 Every activity maps to a measurable goal. This map is shown in the Teacher
