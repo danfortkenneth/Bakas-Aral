@@ -18,6 +18,7 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useLanguage } from '../_layout'; 
 import { useRouter } from 'expo-router'; 
 import { auth, db } from '../../lib/firebase';
+import { ALL_CHARACTERS } from '../../constants/characterLibrary';
 import { scaleFor } from '../../lib/responsive';
 import {
   cycleHapticsLevel,
@@ -31,6 +32,8 @@ import {
   onSnapshot, 
   collection, 
   addDoc, 
+  query,
+  where,
   serverTimestamp
 } from 'firebase/firestore';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
@@ -97,6 +100,7 @@ export default function TeacherScreen() {
   const [students, setStudents] = useState<Student[]>([]);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
 
+  const [analytics, setAnalytics] = useState<Record<string, { attempts: number; accuracySum: number; offPathCount: number }>>({});
   const [isAddingNewStudent, setIsAddingNewStudent] = useState(false);
   const [newFullName, setNewFullName] = useState<string>('');
   const [newSelectedAvatar, setNewSelectedAvatar] = useState<string>('lion');
@@ -413,6 +417,38 @@ export default function TeacherScreen() {
     }
   }
 
+  // Aggregate the active learner's tracing sessions for teacher analytics.
+  useEffect(() => {
+    if (!selectedStudent?.id) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setAnalytics({});
+      return;
+    }
+
+    const q = query(collection(db, 'sessions'), where('userId', '==', selectedStudent.id));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const next: Record<string, { attempts: number; accuracySum: number; offPathCount: number }> = {};
+      snapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        const character = data.letterOrNumber;
+        if (!character) return;
+        if (!next[character]) next[character] = { attempts: 0, accuracySum: 0, offPathCount: 0 };
+        next[character].attempts += 1;
+        next[character].accuracySum += Number(data.accuracy) || 0;
+        next[character].offPathCount += Number(data.offPathCount) || 0;
+      });
+      setAnalytics(next);
+    });
+
+    return () => unsubscribe();
+  }, [selectedStudent?.id]);
+
+  const recommendedCharacter = ALL_CHARACTERS.find((character) => {
+    const stat = analytics[character];
+    if (!stat) return true;
+    return stat.attempts === 0 || stat.accuracySum / stat.attempts < 75;
+  }) ?? ALL_CHARACTERS[0];
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
@@ -500,6 +536,63 @@ export default function TeacherScreen() {
             </View>
           ))}
         </View>
+
+        {/* ANALYTICS — aggregated from the active learner's sessions */}
+        {selectedStudent && (
+          <View style={styles.analyticsCard}>
+            <Text style={styles.analyticsTitle}>
+              {lang === 'ph' ? 'Learning Analytics' : 'Learning Analytics'}
+            </Text>
+            <Text style={styles.analyticsSub}>
+              {lang === 'ph'
+                ? `Para kay ${selectedStudent.fullName}`
+                : `For ${selectedStudent.fullName}`}
+            </Text>
+
+            {Object.keys(analytics).length === 0 ? (
+              <Text style={styles.emptyText}>
+                {lang === 'ph' ? 'Wala pang datos.' : 'No data yet.'}
+              </Text>
+            ) : (
+              ALL_CHARACTERS.map((character) => {
+                const stat = analytics[character];
+                if (!stat) return null;
+                const average = Math.round(stat.accuracySum / stat.attempts);
+                return (
+                  <View key={character} style={styles.analyticsRow}>
+                    <View style={styles.analyticsChar}>
+                      <Text style={styles.analyticsCharText}>{character}</Text>
+                    </View>
+                    <View style={styles.analyticsBarTrack}>
+                      <View style={[styles.analyticsBarFill, { width: `${Math.min(100, average)}%` }]} />
+                    </View>
+                    <Text style={styles.analyticsMeta}>
+                      {`${stat.attempts}x • ${average}%`}
+                    </Text>
+                    {stat.offPathCount > 0 && (
+                      <Text style={styles.analyticsWarn}>{`⚠ ${stat.offPathCount}`}</Text>
+                    )}
+                  </View>
+                );
+              })
+            )}
+
+            <TouchableOpacity
+              style={styles.recommendBtn}
+              onPress={() => router.push({
+                pathname: '/bakas' as any,
+                params: { selectedChar: recommendedCharacter, currentStudentId: selectedStudent.id },
+              })}
+            >
+              <Ionicons name="sparkles" size={16} color="white" />
+              <Text style={styles.recommendBtnText}>
+                {lang === 'ph'
+                  ? `Practice: ${recommendedCharacter}`
+                  : `Practice: ${recommendedCharacter}`}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         <View style={styles.settingsList}>
           <TouchableOpacity style={styles.settingRow} onPress={() => setLang(lang === 'ph' ? 'en' : 'ph')}>
@@ -791,7 +884,20 @@ const styles = StyleSheet.create({
   cancelAddBtn: { backgroundColor: '#333', padding: 12, borderRadius: 10, width: '45%', alignItems: 'center' },
   saveStudentBtn: { backgroundColor: '#4ADE80', padding: 12, borderRadius: 10, width: '45%', alignItems: 'center' },
 
+  emptyText: { fontSize: normalize(10), color: '#9CA3AF', textAlign: 'center', paddingVertical: 12 },
   settingsList: { backgroundColor: 'white', borderRadius: 25, padding: 15, marginBottom: 15 },
+  analyticsCard: { backgroundColor: 'white', borderRadius: 25, padding: 18, marginBottom: 15, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 5 },
+  analyticsTitle: { fontSize: normalize(14), fontWeight: '900', color: '#1F2937' },
+  analyticsSub: { fontSize: normalize(10), color: '#9CA3AF', marginTop: 2, marginBottom: 12 },
+  analyticsRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 7 },
+  analyticsChar: { width: 28, height: 28, borderRadius: 14, backgroundColor: '#F3E8FF', alignItems: 'center', justifyContent: 'center' },
+  analyticsCharText: { fontSize: normalize(11), fontWeight: '900', color: '#7C3AED' },
+  analyticsBarTrack: { flex: 1, height: 8, borderRadius: 4, backgroundColor: '#E5E7EB', overflow: 'hidden' },
+  analyticsBarFill: { height: '100%', borderRadius: 4, backgroundColor: '#7C3AED' },
+  analyticsMeta: { fontSize: normalize(9), color: '#6B7280', fontWeight: '700', minWidth: 52, textAlign: 'right' },
+  analyticsWarn: { fontSize: normalize(9), color: '#EF4444', fontWeight: '900' },
+  recommendBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#7C3AED', height: 42, borderRadius: 21, marginTop: 14 },
+  recommendBtnText: { color: 'white', fontWeight: '900', fontSize: normalize(12) },
   outcomesCard: { backgroundColor: 'white', borderRadius: 25, padding: 18, marginBottom: 15, elevation: 2, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 5 },
   outcomesTitle: { fontSize: normalize(14), fontWeight: '900', color: '#1F2937' },
   outcomesSub: { fontSize: normalize(10), color: '#9CA3AF', marginTop: 2, marginBottom: 12 },

@@ -15,7 +15,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useLanguage } from '../_layout';
-import { FINISH_PHRASES, LETTER_COLORS, PHONETIC_PHRASES, getCharacter } from '../../constants/characterLibrary';
+import { LETTER_COLORS, PHONETIC_PHRASES, getCharacter } from '../../constants/characterLibrary';
 import { PRAISE_SOUND, VOICE_LINES } from '../../constants/voiceLines';
 import { normalizeFor, useResponsive } from '../../lib/responsive';
 import { unlockSticker } from '../../lib/stickers';
@@ -126,10 +126,7 @@ export default function SandboxScreen() {
     ph: `Sundan ang mga puting tuldok para mabuo ang ${selectedChar}. Simulan sa bee!`,
     en: `Follow the white dots to make ${selectedChar}. Start at the bee!`,
   });
-  const successLine = (): AvatarLine => ({
-    ph: `Ang galing, ${studentName}! Tapos na ang ${selectedChar}. Narito ang sticker mo!`,
-    en: `Great job, ${studentName}! You finished ${selectedChar}. Here is your sticker!`,
-  });
+
   const [fadeAnim] = useState(() => new Animated.Value(0));
   const [cardScale] = useState(() => new Animated.Value(0.86));
   const [starAnims] = useState(() => [0, 1, 2].map(() => new Animated.Value(0)));
@@ -373,7 +370,9 @@ export default function SandboxScreen() {
         accuracy: `${finalAccuracy}%`,
         duration: "30s",
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        school: "Home Sandbox Practice"
+        school: "Home Sandbox Practice",
+        offPathCount: errorMoves.current,
+        strokeCount: strokePoints.current.length,
       };
 
       const existingHistory = await AsyncStorage.getItem('@parent_sync_history');
@@ -443,7 +442,10 @@ export default function SandboxScreen() {
         setRevealSignal((value) => value + 1);
       }
     } else {
-      setAvatarLine(FINISH_PHRASES[selectedChar] ?? successLine());
+      setAvatarLine({
+      ph: `${selectedChar} para sa ${charData.word}! Ang galing mo!`,
+      en: `${selectedChar} for ${charData.word}! Great job!`,
+    });
       setAvatarTrigger((value) => value + 1);
       revealTimerRef.current = setTimeout(() => setRevealSignal((value) => value + 1), 1200);
     }

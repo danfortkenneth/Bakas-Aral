@@ -14,7 +14,7 @@ import SpeakingAvatar, { type AvatarLine } from '../../components/SpeakingAvatar
 import { db } from '../../lib/firebase';
 import { collection, addDoc } from 'firebase/firestore';
 import { useLanguage } from '../_layout';
-import { FINISH_PHRASES, LETTER_COLORS, PHONETIC_PHRASES, getCharacter } from '../../constants/characterLibrary';
+import { LETTER_COLORS, PHONETIC_PHRASES, getCharacter } from '../../constants/characterLibrary';
 import { PRAISE_SOUND, VOICE_LINES } from '../../constants/voiceLines';
 import {
   ENDPOINT_TOLERANCE,
@@ -115,10 +115,8 @@ export default function BakasScreen() {
     ph: `Sundan ang mga puting tuldok para mabuo ang ${selectedChar}. Simulan sa bee!`,
     en: `Follow the white dots to make ${selectedChar}. Start at the bee!`,
   });
-  const successLine = (): AvatarLine => ({
-    ph: `Ang galing! Tapos na ang ${selectedChar}. Narito ang sticker mo!`,
-    en: `Great job! You finished ${selectedChar}. Here is your sticker!`,
-  });
+
+
   const [fadeAnim] = useState(() => new Animated.Value(0));
   const [cardScale] = useState(() => new Animated.Value(0.86));
   const [starAnims] = useState(() => [0, 1, 2].map(() => new Animated.Value(0)));
@@ -348,7 +346,9 @@ export default function BakasScreen() {
           accuracy: finalAccuracy,
           timestamp: new Date().toISOString(),
           unlockedSticker: selectedChar,
-          starsEarned: finalAccuracy >= 90 ? 3 : (finalAccuracy >= 75 ? 2 : 1)
+          starsEarned: finalAccuracy >= 90 ? 3 : (finalAccuracy >= 75 ? 2 : 1),
+          offPathCount: errorMoves.current,
+          strokeCount: strokePoints.current.length,
         }),
         new Promise((resolve) => setTimeout(resolve, 3000)),
       ]);
@@ -414,7 +414,10 @@ export default function BakasScreen() {
         setRevealSignal((value) => value + 1);
       }
     } else {
-      setAvatarLine(FINISH_PHRASES[selectedChar] ?? successLine());
+      setAvatarLine({
+      ph: `${selectedChar} para sa ${charData.word}! Ang galing mo!`,
+      en: `${selectedChar} for ${charData.word}! Great job!`,
+    });
       setAvatarTrigger((value) => value + 1);
       revealTimerRef.current = setTimeout(() => setRevealSignal((value) => value + 1), 1200);
     }
