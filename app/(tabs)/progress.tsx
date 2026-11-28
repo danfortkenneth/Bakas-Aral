@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { COLORS } from '../../lib/theme';
 import { StyleSheet, Text, View, ScrollView, SafeAreaView, Dimensions, PixelRatio, ActivityIndicator } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useLanguage } from '../_layout';
@@ -435,14 +436,14 @@ export default function ProgressScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFFBEB' },
+  container: { flex: 1, backgroundColor: COLORS.cream },
   scrollContent: { paddingHorizontal: '5%', paddingTop: 20, paddingBottom: 110 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 },
   subTitle: { fontSize: normalize(10), color: '#78716C', fontWeight: '700', textTransform: 'uppercase' },
   mainTitle: { fontSize: normalize(16), fontWeight: '900', color: '#1C1917' },
   avatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#F77F67', justifyContent: 'center', alignItems: 'center' },
 
-  rewardCard: { backgroundColor: '#FFFBEB', borderColor: '#FDE68A', borderWidth: 1.5, borderRadius: 24, padding: 16, marginBottom: 15, elevation: 1 },
+  rewardCard: { backgroundColor: COLORS.cream, borderColor: '#FDE68A', borderWidth: 1.5, borderRadius: 24, padding: 16, marginBottom: 15, elevation: 1 },
   rewardRow: { flexDirection: 'row', justifyContent: 'space-around', alignItems: 'center' },
   rewardItem: { flexDirection: 'row', alignItems: 'center' },
   rewardCount: { fontSize: normalize(15), fontWeight: '900', color: '#1F2937' },

@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useLanguage } from './_layout';
+import { BUTTON_HEIGHT, COLORS, RADIUS } from '../lib/theme';
 
 const { width } = Dimensions.get('window');
 
@@ -147,7 +148,7 @@ export default function WelcomePage() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFFBEB' },
+  container: { flex: 1, backgroundColor: COLORS.cream },
   scroll: { width: '100%' },
   responsiveWrapper: { flexGrow: 1, width: '100%', maxWidth: 480, alignSelf: 'center', justifyContent: 'space-between' },
   langSwitcher: {
@@ -160,7 +161,7 @@ const styles = StyleSheet.create({
   },
   langBtn: { padding: 8 },
   langText: { fontSize: 14, color: '#AAA', fontWeight: 'bold' },
-  langActive: { color: '#F77F67' },
+  langActive: { color: COLORS.primary },
   langDivider: { marginHorizontal: 5, color: '#DDD' },
   header: { paddingHorizontal: 24, justifyContent: 'center', marginTop: 10 },
   logoRow: { flexDirection: 'row', alignItems: 'center' },
@@ -172,13 +173,13 @@ const styles = StyleSheet.create({
   pillText: { fontSize: scaleFont(10), color: '#666', fontWeight: '700' },
   mainContent: { flexGrow: 1, paddingHorizontal: 24, justifyContent: 'center', marginVertical: 20 },
   titleBlack: { fontSize: scaleFont(36), fontWeight: '800', color: '#222' },
-  titleOrange: { fontSize: scaleFont(36), fontWeight: '800', color: '#F7A072', marginTop: -5 },
+  titleOrange: { fontSize: scaleFont(36), fontWeight: '800', color: COLORS.primarySoft, marginTop: -5 },
   description: { marginTop: 12, fontSize: scaleFont(14), color: '#666', lineHeight: Platform.OS === 'web' ? 22 : scaleFont(22) },
   featureRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 24 },
-  featureCircle: { width: 90, height: 90, borderRadius: 20, backgroundColor: 'white', borderWidth: 1, borderColor: '#F0F0F0', justifyContent: 'center', alignItems: 'center', elevation: 2 },
+  featureCircle: { width: 90, height: 90, borderRadius: RADIUS.md, backgroundColor: COLORS.white, borderWidth: 2, borderColor: COLORS.sunnySoft, justifyContent: 'center', alignItems: 'center', elevation: 2 },
   featLabel: { fontSize: scaleFont(9), fontWeight: '800', color: '#AAA', marginTop: 4 },
   footer: { paddingHorizontal: 24, justifyContent: 'flex-end', paddingBottom: 24 },
-  btnStart: { backgroundColor: '#F77F67', height: 52, borderRadius: 35, justifyContent: 'center', alignItems: 'center' },
+  btnStart: { backgroundColor: COLORS.primary, height: BUTTON_HEIGHT, borderRadius: RADIUS.md, justifyContent: 'center', alignItems: 'center' },
   btnStartText: { color: 'white', fontSize: scaleFont(18), fontWeight: 'bold' },
   btnLogin: { backgroundColor: 'white', height: 52, borderRadius: 35, justifyContent: 'center', alignItems: 'center', marginTop: 10, borderWidth: 1, borderColor: '#EEE' },
   btnLoginText: { color: '#333', fontSize: scaleFont(16), fontWeight: 'bold' },

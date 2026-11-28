@@ -15,6 +15,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 
 import { auth, db } from '../../lib/firebase';
 import { normalizeFor } from '../../lib/responsive';
+import { COLORS, RADIUS } from '../../lib/theme';
 import { useLanguage } from '../_layout';
 import { createUserWithEmailAndPassword, updateProfile, signOut } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
@@ -262,9 +263,9 @@ export default function Signup() {
 
             {currentRole === 'teacher' && (
               <View style={styles.inputGroup}>
-                <Text style={[styles.label, { color: '#1E3A8A' }]}>{t.labelEmpId}</Text>
+                <Text style={[styles.label, { color: COLORS.primary }]}>{t.labelEmpId}</Text>
                 <TextInput
-                  style={[styles.input, { borderColor: '#1E3A8A' }]}
+                  style={[styles.input, { borderColor: COLORS.primary }]}
                   placeholder={t.placeholderEmpId}
                   value={employeeId}
                   onChangeText={(v) => { setEmployeeId(v); clearError(); }}
@@ -346,9 +347,9 @@ export default function Signup() {
               </View>
             ) : (
               <View style={styles.inputGroup}>
-                <Text style={[styles.label, { color: '#F77F67' }]}>{t.labelKey}</Text>
+                <Text style={[styles.label, { color: COLORS.primary }]}>{t.labelKey}</Text>
                 <TextInput
-                  style={[styles.input, { borderColor: '#F77F67' }]}
+                  style={[styles.input, { borderColor: COLORS.primary }]}
                   placeholder={t.placeholderKey}
                   secureTextEntry
                   value={adminKey}
@@ -414,14 +415,14 @@ export default function Signup() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFFBEB' },
+  container: { flex: 1, backgroundColor: COLORS.cream },
   scrollContainer: { paddingBottom: 40, alignItems: 'center' },
   responsiveWrapper: { width: '100%', maxWidth: 550, paddingHorizontal: '8%' },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 20, marginBottom: 18 },
   headerTitle: { fontSize: normalize(10), fontWeight: '900', color: '#999', letterSpacing: 1.2 },
   backArrow: { fontSize: 20, color: '#333' },
   progressBarContainer: { flexDirection: 'row', flex: 0.8, height: 6, backgroundColor: '#E5E5E5', borderRadius: 3, overflow: 'hidden' },
-  progressBarActive: { flex: 0.5, backgroundColor: '#1E3A8A' },
+  progressBarActive: { flex: 0.5, backgroundColor: COLORS.primary },
   progressText: { fontSize: 12, color: '#999', fontWeight: 'bold' },
   backBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'white', justifyContent: 'center', alignItems: 'center', elevation: 2 },
   content: { marginTop: 4 },
@@ -437,22 +438,22 @@ const styles = StyleSheet.create({
   messageBox: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, backgroundColor: '#FEF2F2', borderRadius: 12, padding: 12, marginBottom: 12 },
   errorText: { flex: 1, color: '#B91C1C', fontSize: normalize(12), lineHeight: 18 },
   termsRow: { flexDirection: 'row', alignItems: 'center', marginVertical: 12 },
-  checkbox: { width: 20, height: 20, borderRadius: 5, borderWidth: 1, borderColor: '#1E3A8A', marginRight: 10, alignItems: 'center', justifyContent: 'center' },
-  checkboxActive: { backgroundColor: '#1E3A8A' },
+  checkbox: { width: 20, height: 20, borderRadius: 5, borderWidth: 1, borderColor: COLORS.primary, marginRight: 10, alignItems: 'center', justifyContent: 'center' },
+  checkboxActive: { backgroundColor: COLORS.primary },
   termsText: { flex: 1, fontSize: normalize(11), color: '#666' },
   privacyLink: { alignSelf: 'flex-start', marginBottom: 6 },
-  privacyLinkText: { color: '#1E3A8A', fontWeight: '800', fontSize: normalize(11), textDecorationLine: 'underline' },
-  btnCreate: { backgroundColor: '#1E3A8A', height: 60, borderRadius: 30, justifyContent: 'center', alignItems: 'center', marginTop: 10, elevation: 3 },
+  privacyLinkText: { color: COLORS.primary, fontWeight: '800', fontSize: normalize(11), textDecorationLine: 'underline' },
+  btnCreate: { backgroundColor: COLORS.primary, height: 60, borderRadius: RADIUS.md, justifyContent: 'center', alignItems: 'center', marginTop: 10, elevation: 3 },
   btnDisabled: { backgroundColor: '#9CA3AF' },
   btnText: { color: 'white', fontSize: normalize(16), fontWeight: '700' },
   footerTouch: { alignSelf: 'center', marginTop: 24 },
   footerText: { textAlign: 'center', color: '#777', fontSize: normalize(13) },
-  loginLink: { color: '#1E3A8A', fontWeight: '700' },
+  loginLink: { color: COLORS.primary, fontWeight: '700' },
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.4)', alignItems: 'center', justifyContent: 'center', padding: 24 },
   modalCard: { width: '100%', maxWidth: 420, backgroundColor: 'white', borderRadius: 22, padding: 20 },
   modalHeader: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 },
   modalTitle: { fontSize: normalize(15), fontWeight: '900', color: '#1F2937' },
   modalBody: { fontSize: normalize(12), color: '#4B5563', lineHeight: 19 },
-  modalBtn: { alignSelf: 'flex-end', backgroundColor: '#1E3A8A', paddingHorizontal: 20, paddingVertical: 9, borderRadius: 16, marginTop: 16 },
+  modalBtn: { alignSelf: 'flex-end', backgroundColor: COLORS.primary, paddingHorizontal: 20, paddingVertical: 9, borderRadius: 16, marginTop: 16 },
   modalBtnText: { color: 'white', fontWeight: '800', fontSize: normalize(12) },
 });

@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import { db } from '../../lib/firebase';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { normalizeFor, useResponsive } from '../../lib/responsive';
+import { COLORS } from '../../lib/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function TabLayout() {
@@ -79,7 +80,7 @@ function CustomTabBar({ state, descriptors, navigation }: any) {
         ]}
       >
         <View style={[styles.tabBar, { justifyContent: 'center', height: barHeight }]}>
-          <ActivityIndicator color="#F77F67" size="small" />
+          <ActivityIndicator color={COLORS.primary} size="small" />
         </View>
       </View>
     );
@@ -198,11 +199,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
   },
   tabItemActive: {
-    backgroundColor: '#F77F67',
+    backgroundColor: COLORS.primary,
     justifyContent: 'center',
     alignItems: 'center',
     elevation: 6,
-    shadowColor: '#F77F67',
+    shadowColor: COLORS.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 5,

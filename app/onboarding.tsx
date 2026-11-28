@@ -17,6 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import { useLanguage } from './_layout';
+import { BUTTON_HEIGHT, COLORS, RADIUS } from '../lib/theme';
 
 const CONSENT_KEY = '@bakas_consent';
 
@@ -138,12 +139,12 @@ export default function OnboardingScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFFBEB' },
+  container: { flex: 1, backgroundColor: COLORS.cream },
   content: { paddingHorizontal: 24, paddingBottom: 30, alignItems: 'center' },
   langRow: { flexDirection: 'row', alignSelf: 'flex-end', gap: 6, paddingTop: 10 },
   langBtn: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12, backgroundColor: 'white' },
   langText: { fontWeight: '900', fontSize: 12, color: '#9CA3AF' },
-  langActive: { color: '#F77F67' },
+  langActive: { color: COLORS.primary },
   badge: { backgroundColor: '#DCFCE7', paddingHorizontal: 12, paddingVertical: 5, borderRadius: 12, marginTop: 16 },
   badgeText: { fontSize: 10, fontWeight: '900', color: '#15803D', letterSpacing: 0.6 },
   shield: { width: 84, height: 84, borderRadius: 42, backgroundColor: '#F0FDF4', alignItems: 'center', justifyContent: 'center', marginTop: 20 },
@@ -153,13 +154,13 @@ const styles = StyleSheet.create({
   bulletRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 8, marginBottom: 12 },
   bullet: { flex: 1, fontSize: 13, color: '#374151', lineHeight: 19 },
   moreRow: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'center', marginTop: 14 },
-  moreText: { fontSize: 12, fontWeight: '800', color: '#F77F67' },
+  moreText: { fontSize: 12, fontWeight: '800', color: COLORS.primary },
   details: { fontSize: 12, color: '#6B7280', lineHeight: 18, marginTop: 10, backgroundColor: 'white', borderRadius: 14, padding: 14 },
   agreeRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 20 },
   checkbox: { width: 24, height: 24, borderRadius: 8, borderWidth: 2, borderColor: '#D1D5DB', alignItems: 'center', justifyContent: 'center' },
   checkboxOn: { backgroundColor: '#22C55E', borderColor: '#22C55E' },
   agreeText: { flex: 1, fontSize: 12, color: '#374151', lineHeight: 17 },
-  continueBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#F77F67', height: 50, borderRadius: 25, width: '100%', marginTop: 20 },
+  continueBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: COLORS.primary, height: BUTTON_HEIGHT, borderRadius: RADIUS.md, width: '100%', marginTop: 20 },
   continueDisabled: { backgroundColor: '#D1D5DB' },
   continueText: { color: 'white', fontWeight: '900', fontSize: 15 },
 });

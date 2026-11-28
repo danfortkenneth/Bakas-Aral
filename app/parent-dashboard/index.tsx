@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { COLORS } from '../../lib/theme';
 import { 
   StyleSheet, 
   Text, 
@@ -479,7 +480,7 @@ export default function ParentsDashboardScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFFBEB' },
+  container: { flex: 1, backgroundColor: COLORS.cream },
   center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 20 },
   scrollContent: { padding: 20, paddingBottom: 50 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },

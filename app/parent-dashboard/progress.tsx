@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { COLORS } from '../../lib/theme';
 import { StyleSheet, Text, View, ScrollView, SafeAreaView, Dimensions, PixelRatio, ActivityIndicator } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useLanguage } from '../_layout';
@@ -331,7 +332,7 @@ export default function ProgressScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFFBEB' },
+  container: { flex: 1, backgroundColor: COLORS.cream },
   scrollContent: { paddingHorizontal: '5%', paddingTop: 20, paddingBottom: 110 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
   subTitle: { fontSize: normalize(11), color: '#78716C', fontWeight: '700', textTransform: 'uppercase' },

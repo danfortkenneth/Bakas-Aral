@@ -1,90 +1,93 @@
-import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, SafeAreaView, FlatList, Alert } from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import { COLORS } from '../../lib/theme';
+import {
+  Image,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { TRACEABLE_LETTERS, TRACEABLE_NUMBERS } from '../../constants/traceableData';
+import { VOICE_LINES } from '../../constants/voiceLines';
+import { loadStickers } from '../../lib/stickers';
+import { useLanguage } from '../_layout';
+
+const ALL = [...TRACEABLE_LETTERS, ...TRACEABLE_NUMBERS];
 
 export default function StickerBook() {
   const router = useRouter();
-  const [stickers, setStickers] = useState<string[]>(["⭐️ First Steps", "✍️ Perfect Line"]); // Default starter stickers
-  const [hearts, setHearts] = useState(3);
+  const { lang } = useLanguage();
+  const [stickers, setStickers] = useState<string[]>([]);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const hydrate = async () => {
-      try {
-        const stored = await AsyncStorage.getItem('@collected_stickers');
-        if (!stored || cancelled) return;
-        const parsed: string[] = JSON.parse(stored);
-        setStickers(prev => [...prev, ...parsed]);
-      } catch (error) {
-        console.warn('Failed to load stickers:', error);
-      }
-    };
-
-    hydrate();
-
-    return () => {
-      cancelled = true;
-    };
+  const refresh = useCallback(() => {
+    loadStickers().then(setStickers);
   }, []);
 
-  const handleFeedAnimal = () => {
-    setHearts(prev => prev + 1);
-    Alert.alert("Yum! 😋", "You fed the active animal avatar! It loves you more now.");
-  };
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
 
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <Text style={{ fontSize: 20 }}>←</Text>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} accessibilityLabel="Back">
+          <Ionicons name="arrow-back" size={20} color="#333" />
         </TouchableOpacity>
-        <Text style={styles.title}>Sticker Rewards</Text>
+        <Text style={styles.title}>
+          {lang === 'ph' ? 'Album ng Sticker' : 'Sticker Album'}
+        </Text>
         <View style={{ width: 40 }} />
       </View>
 
-      {/* Mini-Game Segment */}
-      <View style={styles.miniGameBox}>
-        <Text style={styles.gameHeading}>Feed Your Animal Avatar</Text>
-        <Text style={{ fontSize: 60, marginVertical: 10 }}>🦁</Text>
-        <Text style={styles.heartRating}>❤️ Affinity Level: {hearts}</Text>
-        <TouchableOpacity style={styles.feedBtn} onPress={handleFeedAnimal}>
-          <Text style={styles.feedBtnText}>🍖 Give Treat</Text>
-        </TouchableOpacity>
+      <View style={styles.summary}>
+        <Ionicons name="albums-outline" size={20} color="#7C3AED" />
+        <Text style={styles.summaryText}>
+          {lang === 'ph'
+            ? `${stickers.length}/${ALL.length} sticker ang nakolekta`
+            : `${stickers.length}/${ALL.length} stickers collected`}
+        </Text>
       </View>
 
-      <Text style={styles.sectionTitle}>Your Digital Album Collection</Text>
-
-      {/* Sticker Album List Grid */}
-      <FlatList
-        data={stickers}
-        numColumns={2}
-        keyExtractor={(item, index) => index.toString()}
-        columnWrapperStyle={{ justifyContent: 'space-between' }}
-        renderItem={({ item }) => (
-          <View style={styles.stickerItem}>
-            <Text style={styles.stickerThumb}>{item.split(' ')[0]}</Text>
-            <Text style={styles.stickerText}>{item.substring(item.indexOf(' ') + 1)}</Text>
-          </View>
-        )}
-      />
+      <ScrollView contentContainerStyle={styles.grid} showsVerticalScrollIndicator={false}>
+        {ALL.map((character) => {
+          const unlocked = stickers.includes(character);
+          const art = VOICE_LINES[character]?.image;
+          return (
+            <View
+              key={character}
+              style={[styles.stickerItem, unlocked ? styles.stickerUnlocked : styles.stickerLocked]}
+            >
+              {unlocked && art ? (
+                <Image source={art} style={styles.art} resizeMode="contain" />
+              ) : (
+                <Text style={styles.emoji}>{unlocked ? '⭐' : '🔒'}</Text>
+              )}
+              <Text style={[styles.char, !unlocked && styles.charLocked]}>{character}</Text>
+            </View>
+          );
+        })}
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFFBEB', paddingHorizontal: 20 },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 20, marginBottom: 20 },
+  container: { flex: 1, backgroundColor: COLORS.cream, paddingHorizontal: 20 },
+  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 20, marginBottom: 16 },
   backBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'white', justifyContent: 'center', alignItems: 'center', elevation: 2 },
-  title: { fontSize: 20, fontWeight: 'bold', color: '#333' },
-  miniGameBox: { backgroundColor: 'white', padding: 20, borderRadius: 25, alignItems: 'center', elevation: 2, marginBottom: 25 },
-  gameHeading: { fontSize: 14, fontWeight: '700', color: '#555' },
-  heartRating: { fontSize: 13, color: '#E11D48', fontWeight: 'bold', marginBottom: 12 },
-  feedBtn: { backgroundColor: '#10B981', paddingHorizontal: 20, paddingVertical: 10, borderRadius: 15 },
-  feedBtnText: { color: 'white', fontWeight: 'bold', fontSize: 13 },
-  sectionTitle: { fontSize: 15, fontWeight: 'bold', color: '#444', marginBottom: 15 },
-  stickerItem: { flex: 0.47, backgroundColor: 'white', padding: 15, borderRadius: 20, alignItems: 'center', marginBottom: 15, elevation: 1, borderWidth: 1, borderColor: '#F3F4F6' },
-  stickerThumb: { fontSize: 35, marginBottom: 5 },
-  stickerText: { fontSize: 12, fontWeight: '600', color: '#444', textAlign: 'center' }
+  title: { fontSize: 20, fontWeight: '900', color: '#333' },
+  summary: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: 'white', borderRadius: 18, padding: 14, marginBottom: 16 },
+  summaryText: { fontSize: 13, fontWeight: '800', color: '#5B21B6' },
+  grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, paddingBottom: 30 },
+  stickerItem: { width: '28%', aspectRatio: 0.85, borderRadius: 20, alignItems: 'center', justifyContent: 'center', padding: 10, elevation: 2 },
+  stickerUnlocked: { backgroundColor: '#F0FDF4', borderWidth: 2, borderColor: '#4ADE80' },
+  stickerLocked: { backgroundColor: '#F3F4F6', borderWidth: 1, borderColor: '#E5E7EB' },
+  art: { width: 54, height: 54 },
+  emoji: { fontSize: 30 },
+  char: { marginTop: 6, fontSize: 16, fontWeight: '900', color: '#166534' },
+  charLocked: { color: '#9CA3AF' },
 });

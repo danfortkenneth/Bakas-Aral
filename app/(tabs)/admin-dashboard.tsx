@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { COLORS } from '../../lib/theme';
 import {
   StyleSheet,
   Text,
@@ -469,7 +470,7 @@ export default function AdminDashboard() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFFBEB' },
+  container: { flex: 1, backgroundColor: COLORS.cream },
   scrollPadding: { paddingHorizontal: '5%', paddingBottom: 120 },
   
   headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 25, marginBottom: 15 },

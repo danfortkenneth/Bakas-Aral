@@ -5,6 +5,8 @@ import { createAudioPlayer } from 'expo-audio';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { normalizeFor, useResponsive } from '../../lib/responsive';
+import { unlockSticker } from '../../lib/stickers';
+import { COLORS, RADIUS } from '../../lib/theme';
 import { haptics } from '../../lib/haptics';
 import TraceCanvas from '../../components/TraceCanvas';
 import SpeakingAvatar, { type AvatarLine } from '../../components/SpeakingAvatar';
@@ -406,6 +408,7 @@ export default function BakasScreen() {
 
     haptics.replayStrokes(strokePoints.current);
     haptics.finished();
+    unlockSticker(selectedChar);
     saveSessionToDatabase(calculatedScore);
 
     // Reward reveal: a short pause lets the finished letter register first,
@@ -611,7 +614,7 @@ export default function BakasScreen() {
               <Ionicons name="arrow-back" size={24} color="#333" />
             </TouchableOpacity>
 
-            <View style={[styles.statusBadge, { backgroundColor: isFinished ? '#DCFCE7' : (isOnPath ? '#FEF3C7' : '#FEE2E2') }]}>
+            <View style={[styles.statusBadge, { backgroundColor: isFinished ? COLORS.mintSoft : (isOnPath ? '#FEF3C7' : '#FEE2E2') }]}>
               <Text
                 style={styles.statusText}
                 numberOfLines={1}
@@ -717,7 +720,7 @@ export default function BakasScreen() {
                     <Ionicons
                       name={earnedStars > index ? 'star' : 'star-outline'}
                       size={index === 1 ? 46 : 36}
-                      color={earnedStars > index ? '#FBBF24' : '#E5E7EB'}
+                      color={earnedStars > index ? COLORS.sunny : '#E5E7EB'}
                       style={index === 1 ? { marginTop: -10 } : undefined}
                     />
                   </Animated.View>
@@ -759,7 +762,7 @@ export default function BakasScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFFBEB' },
+  container: { flex: 1, backgroundColor: COLORS.cream },
   errorBg: { backgroundColor: '#FFF0F0' },
   overlay: { paddingHorizontal: '6%', paddingTop: 10, paddingBottom: 6, zIndex: 10 },
   topRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '100%' },
@@ -768,40 +771,40 @@ const styles = StyleSheet.create({
   backBtnDisabled: { opacity: 0.35 },
   statusBadge: { paddingHorizontal: 22, paddingVertical: 10, borderRadius: 20, elevation: 2, flexShrink: 1, marginHorizontal: 8 },
   progressRow: { flexDirection: 'row', alignItems: 'center', marginTop: 10, width: '100%' },
-  progressTrack: { flex: 1, height: 10, borderRadius: 5, backgroundColor: '#FDE68A', overflow: 'hidden' },
-  progressFill: { height: '100%', borderRadius: 5, backgroundColor: '#F77F67' },
+  progressTrack: { flex: 1, height: 10, borderRadius: 5, backgroundColor: COLORS.sunnySoft, overflow: 'hidden' },
+  progressFill: { height: '100%', borderRadius: 5, backgroundColor: COLORS.primary },
   progressLabel: { marginLeft: 10, fontSize: normalize(11), fontWeight: '900', color: '#92400E' },
   statusText: { fontWeight: '900', fontSize: normalize(12), color: '#333', letterSpacing: 0.5, textAlign: 'center' },
   canvasArea: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: '4%', paddingVertical: 6 },
   avatarSide: { left: -2, bottom: '12%' },
   starRewardWrap: { position: 'absolute', top: 130, left: 0, right: 0, alignItems: 'center' },
-  starReward: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: 'rgba(255,255,255,0.92)', borderRadius: 30, borderWidth: 2, borderColor: '#FDE68A', paddingHorizontal: 22, paddingVertical: 10, elevation: 10, shadowColor: '#F59E0B', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.22, shadowRadius: 14 },
+  starReward: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, backgroundColor: 'rgba(255,255,255,0.92)', borderRadius: RADIUS.md, borderWidth: 2, borderColor: COLORS.sunnySoft, paddingHorizontal: 22, paddingVertical: 10, elevation: 10, shadowColor: '#F59E0B', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.22, shadowRadius: 14 },
   compactActions: { position: 'absolute', left: '5%', right: '5%', bottom: 8, flexDirection: 'row', gap: 10 },
-  compactBtn: { flex: 1, backgroundColor: '#F77F67', height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center', flexDirection: 'row' },
+  compactBtn: { flex: 1, backgroundColor: COLORS.primary, height: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center', flexDirection: 'row' },
   compactBtnSecondary: { backgroundColor: '#F3F4F6' },
   compactBtnText: { color: 'white', fontWeight: '900', fontSize: normalize(12) },
   compactBtnTextSecondary: { color: '#555', fontWeight: '900', fontSize: normalize(12) },
   
   rewardOverlay: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, justifyContent: 'center', alignItems: 'center', zIndex: 30 },
-  successContent: { backgroundColor: 'white', padding: 25, paddingTop: 22, borderRadius: 35, borderWidth: 3, borderColor: '#FDE68A', alignItems: 'center', elevation: 25, shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.18, shadowRadius: 20, width: isTablet ? 450 : '88%', maxHeight: '88%', flexShrink: 1 },
+  successContent: { backgroundColor: 'white', padding: 25, paddingTop: 22, borderRadius: 35, borderWidth: 3, borderColor: COLORS.sunnySoft, alignItems: 'center', elevation: 25, shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.18, shadowRadius: 20, width: isTablet ? 450 : '88%', maxHeight: '88%', flexShrink: 1 },
   rewardScroll: { width: '100%' },
   rewardScrollContent: { alignItems: 'center' },
-  rewardTitle: { fontSize: normalize(16), fontWeight: '900', color: '#F77F67', textAlign: 'center', letterSpacing: 0.3 },
+  rewardTitle: { fontSize: normalize(16), fontWeight: '900', color: COLORS.primary, textAlign: 'center', letterSpacing: 0.3 },
   rewardSubtitle: { fontSize: normalize(11), color: '#666', textAlign: 'center', marginTop: 6, paddingHorizontal: 10, lineHeight: 15 },
   rewardBadgeRow: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#FEF3C7', paddingHorizontal: 14, paddingVertical: 6, borderRadius: 14, marginBottom: 10 },
   rewardBadgeText: { fontSize: normalize(10), fontWeight: '900', color: '#B45309', letterSpacing: 0.8 },
   rewardHeaderRow: { alignItems: 'center', width: '100%' },
   starsRewardRow: { flexDirection: 'row', gap: 6, marginVertical: 10, justifyContent: 'center', alignItems: 'center' },
-  stickerEmblemFrameBox: { backgroundColor: '#F0FDF4', borderWidth: 3, borderColor: '#4ADE80', borderRadius: 25, padding: 15, marginVertical: 10, alignItems: 'center', width: '90%' },
+  stickerEmblemFrameBox: { backgroundColor: '#F0FDF4', borderWidth: 3, borderColor: COLORS.mint, borderRadius: 25, padding: 15, marginVertical: 10, alignItems: 'center', width: '90%' },
   anchorImage: { width: isTablet ? 180 : 130, height: isTablet ? 180 : 130, marginBottom: 8 },
-  anchorImageFallback: { width: isTablet ? 180 : 130, height: isTablet ? 180 : 130, marginBottom: 8, borderRadius: 24, backgroundColor: '#DCFCE7', alignItems: 'center', justifyContent: 'center' },
+  anchorImageFallback: { width: isTablet ? 180 : 130, height: isTablet ? 180 : 130, marginBottom: 8, borderRadius: 24, backgroundColor: COLORS.mintSoft, alignItems: 'center', justifyContent: 'center' },
   anchorImageFallbackText: { fontSize: normalize(64), fontWeight: '900', color: '#16A34A' },
-  stickerBadgePillLabel: { backgroundColor: '#4ADE80', color: '#141414', fontWeight: '900', fontSize: normalize(9), paddingHorizontal: 12, paddingVertical: 3, borderRadius: 10, textTransform: 'uppercase' },
+  stickerBadgePillLabel: { backgroundColor: COLORS.mint, color: '#141414', fontWeight: '900', fontSize: normalize(9), paddingHorizontal: 12, paddingVertical: 3, borderRadius: 10, textTransform: 'uppercase' },
   anchorTextDescription: { fontSize: normalize(11), fontWeight: '700', color: '#4B5563', marginBottom: 12, textAlign: 'center', paddingHorizontal: 5, lineHeight: 16 },
-  accuracyPillTextBadge: { fontSize: normalize(11), color: '#16A34A', fontWeight: '900', backgroundColor: '#DCFCE7', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12, alignSelf: 'center', marginBottom: 18 },
+  accuracyPillTextBadge: { fontSize: normalize(11), color: '#16A34A', fontWeight: '900', backgroundColor: COLORS.mintSoft, paddingHorizontal: 12, paddingVertical: 4, borderRadius: 12, alignSelf: 'center', marginBottom: 18 },
 
   btnRow: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', gap: 10 },
-  modalBtn: { flex: 1, backgroundColor: '#F77F67', paddingVertical: 14, borderRadius: 20, alignItems: 'center', justifyContent: 'center', elevation: 2, flexDirection: 'row' },
+  modalBtn: { flex: 1, backgroundColor: COLORS.primary, paddingVertical: 14, borderRadius: 20, alignItems: 'center', justifyContent: 'center', elevation: 2, flexDirection: 'row' },
   modalBtnSecondary: { backgroundColor: '#F3F4F6' },
   modalBtnText: { color: 'white', fontWeight: '900', fontSize: normalize(12) },
   modalBtnTextSec: { color: '#555', fontWeight: '900', fontSize: normalize(12) }

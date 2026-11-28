@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
+import { COLORS } from '../../lib/theme';
 import { 
   StyleSheet, 
   Text, 
@@ -749,7 +750,7 @@ export default function TeacherScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFFBEB' },
+  container: { flex: 1, backgroundColor: COLORS.cream },
   scrollContent: { paddingHorizontal: '5%', paddingTop: 20, paddingBottom: 110 },
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 25 },
   dashboardSubtitle: { fontSize: normalize(9), color: '#9CA3AF', fontWeight: 'bold', textTransform: 'uppercase' },

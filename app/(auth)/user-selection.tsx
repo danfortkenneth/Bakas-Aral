@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { COLORS } from '../../lib/theme';
 import { 
   StyleSheet, 
   Text, 
@@ -153,7 +154,7 @@ export default function UserSelection() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFFBEB' },
+  container: { flex: 1, backgroundColor: COLORS.cream },
   scroll: { width: '100%' },
   responsiveWrapper: { flexGrow: 1, width: '100%', maxWidth: 550, alignSelf: 'center', paddingHorizontal: width * 0.08 },
   header: { flexDirection: 'row', alignItems: 'center', marginTop: 20, justifyContent: 'space-between' },

@@ -17,6 +17,7 @@ import { useRouter } from 'expo-router';
 
 import { auth, db } from '../../lib/firebase';
 import { normalizeFor } from '../../lib/responsive';
+import { COLORS, RADIUS } from '../../lib/theme';
 import { useLanguage } from '../_layout';
 import { signInWithEmailAndPassword, signOut, sendPasswordResetEmail } from 'firebase/auth';
 import { doc, getDoc, collection, query, where, getDocs } from 'firebase/firestore';
@@ -342,9 +343,9 @@ export default function LoginPage() {
 
               {role === 'admin' && (
                 <View style={styles.inputGroup}>
-                  <Text style={[styles.label, { color: '#F77F67' }]}>{t.labelKey}</Text>
+                  <Text style={[styles.label, { color: COLORS.primary }]}>{t.labelKey}</Text>
                   <TextInput
-                    style={[styles.input, { borderColor: '#F77F67' }]}
+                    style={[styles.input, { borderColor: COLORS.primary }]}
                     placeholder={t.placeholderKey}
                     secureTextEntry
                     value={adminKey}
@@ -408,7 +409,7 @@ export default function LoginPage() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFFBEB' },
+  container: { flex: 1, backgroundColor: COLORS.cream },
   scrollContainer: { paddingBottom: 40, alignItems: 'center' },
   responsiveWrapper: { width: '100%', maxWidth: 550, paddingHorizontal: '8%' },
   backBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'white', justifyContent: 'center', alignItems: 'center', marginTop: 20, elevation: 2 },
@@ -417,7 +418,7 @@ const styles = StyleSheet.create({
   mainTitle: { fontSize: normalize(22), fontWeight: '900', color: '#333', marginTop: 5, marginBottom: 25 },
   roleContainer: { flexDirection: 'row', backgroundColor: 'white', borderRadius: 30, padding: 5, marginBottom: 25, borderWidth: 1, borderColor: '#EEE' },
   roleTab: { flex: 1, height: 45, justifyContent: 'center', alignItems: 'center', borderRadius: 25 },
-  roleActive: { backgroundColor: '#1E3A8A' },
+  roleActive: { backgroundColor: COLORS.primary },
   roleText: { color: '#999', fontWeight: '700', fontSize: normalize(14) },
   roleTextActive: { color: 'white' },
   inputGroup: { marginBottom: 15 },
@@ -433,12 +434,12 @@ const styles = StyleSheet.create({
   forgotRow: { alignSelf: 'flex-end', marginVertical: 8 },
   rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginVertical: 10 },
   checkboxRow: { flexDirection: 'row', alignItems: 'center' },
-  checkbox: { width: 18, height: 18, borderRadius: 4, borderWidth: 1, borderColor: '#1E3A8A', marginRight: 8, justifyContent: 'center', alignItems: 'center' },
-  checkboxActive: { backgroundColor: '#1E3A8A' },
+  checkbox: { width: 18, height: 18, borderRadius: 4, borderWidth: 1, borderColor: COLORS.primary, marginRight: 8, justifyContent: 'center', alignItems: 'center' },
+  checkboxActive: { backgroundColor: COLORS.primary },
   rememberText: { fontSize: normalize(13), color: '#666' },
-  forgotText: { fontSize: normalize(13), color: '#1E3A8A', fontWeight: '700' },
-  btnLogin: { backgroundColor: '#1E3A8A', height: 60, borderRadius: 30, justifyContent: 'center', alignItems: 'center', marginTop: 20, elevation: 4 },
+  forgotText: { fontSize: normalize(13), color: COLORS.primary, fontWeight: '700' },
+  btnLogin: { backgroundColor: COLORS.primary, height: 60, borderRadius: RADIUS.md, justifyContent: 'center', alignItems: 'center', marginTop: 20, elevation: 4 },
   btnLoginText: { color: 'white', fontSize: normalize(16), fontWeight: '700' },
   signupFooter: { textAlign: 'center', marginTop: 30, color: '#777', fontSize: normalize(14), marginBottom: 40 },
-  signupLink: { color: '#1E3A8A', fontWeight: '700' },
+  signupLink: { color: COLORS.primary, fontWeight: '700' },
 });

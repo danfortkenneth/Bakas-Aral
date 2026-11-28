@@ -1,4 +1,5 @@
 import React from 'react';
+import { COLORS } from '../../lib/theme';
 import { StyleSheet, Text, View, TouchableOpacity, SafeAreaView, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -112,7 +113,7 @@ export default function QRScannerPortal() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#FFFBEB', paddingHorizontal: 20 },
+  container: { flex: 1, backgroundColor: COLORS.cream, paddingHorizontal: 20 },
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 20 },
   backBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: 'white', justifyContent: 'center', alignItems: 'center', elevation: 2 },
   title: { fontSize: 18, fontWeight: 'bold', color: '#333' },
