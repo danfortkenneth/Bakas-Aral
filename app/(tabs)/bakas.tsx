@@ -6,6 +6,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { normalizeFor, useResponsive } from '../../lib/responsive';
 import { unlockSticker } from '../../lib/stickers';
+import { hintLevelFor, loadAttempts, recordAttempt, type HintLevel } from '../../lib/adaptive';
 import { COLORS, RADIUS } from '../../lib/theme';
 import { haptics } from '../../lib/haptics';
 import TraceCanvas from '../../components/TraceCanvas';
@@ -65,6 +66,10 @@ export default function BakasScreen() {
   }, [canvas.width, canvas.height]);
   
   const selectedChar = (params.selectedChar as string) || 'A';
+  const selectedCharRef = useRef(selectedChar);
+  useEffect(() => {
+    selectedCharRef.current = selectedChar;
+  }, [selectedChar]);
   const studentId = (params.currentStudentId as string) || null;
   const charData = getCharacter(selectedChar);
 
@@ -96,6 +101,14 @@ export default function BakasScreen() {
   /** Increments when the finish voice ends, so the image reveal waits for it. */
   const [revealSignal, setRevealSignal] = useState(0);
   const [demoToken, setDemoToken] = useState(0);
+  const [hintLevel, setHintLevel] = useState<HintLevel>(0);
+  useEffect(() => {
+    let active = true;
+    loadAttempts(selectedChar).then((attempts) => {
+      if (active) setHintLevel(hintLevelFor(attempts));
+    });
+    return () => { active = false; };
+  }, [selectedChar]);
 
   /** Lines are rebuilt from the current character so the avatar stays in sync. */
   const instructionLine = (): AvatarLine => ({
@@ -409,6 +422,7 @@ export default function BakasScreen() {
     haptics.replayStrokes(strokePoints.current);
     haptics.finished();
     unlockSticker(selectedChar);
+    recordAttempt(selectedChar);
     saveSessionToDatabase(calculatedScore);
 
     // Reward reveal: a short pause lets the finished letter register first,
@@ -551,7 +565,8 @@ export default function BakasScreen() {
         const svgX = (locationX / canvasRef.current.width) * 400;
         const svgY = (locationY / canvasRef.current.height) * 600;
         if (strokePoints.current.length === 0) {
-          const startPlayer = letterAudioRef.current[selectedChar];
+          const currentChar = selectedCharRef.current;
+          const startPlayer = letterAudioRef.current[currentChar];
           if (startPlayer) {
             try { startPlayer.seekTo(0); startPlayer.play(); } catch {}
           } else {
@@ -688,6 +703,8 @@ export default function BakasScreen() {
             isOnPath={isOnPath}
             beePos={beePos}
             color={LETTER_COLORS[selectedChar] ?? '#0E5C5C'}
+            segments={charData.segments}
+            hintLevel={hintLevel}
             demoToken={demoToken}
             revealSignal={revealSignal}
             anchorImage={
@@ -695,7 +712,9 @@ export default function BakasScreen() {
                 ? (lang === 'ph' ? VOICE_LINES.A.image : require('../../assets/images/apple.png'))
                 : selectedChar === 'B'
                   ? (lang === 'ph' ? VOICE_LINES.B.image : require('../../assets/images/ball.png'))
-                  : undefined
+                  : selectedChar === 'C'
+                    ? VOICE_LINES.C.image
+                    : undefined
             }
             panHandlers={panResponder.panHandlers}
           />

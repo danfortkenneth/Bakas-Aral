@@ -19,6 +19,7 @@ import { FINISH_PHRASES, LETTER_COLORS, PHONETIC_PHRASES, getCharacter } from '.
 import { PRAISE_SOUND, VOICE_LINES } from '../../constants/voiceLines';
 import { normalizeFor, useResponsive } from '../../lib/responsive';
 import { unlockSticker } from '../../lib/stickers';
+import { hintLevelFor, loadAttempts, recordAttempt, type HintLevel } from '../../lib/adaptive';
 import { COLORS, RADIUS } from '../../lib/theme';
 import { haptics } from '../../lib/haptics';
 import TraceCanvas from '../../components/TraceCanvas';
@@ -70,6 +71,10 @@ export default function SandboxScreen() {
   }, [canvas.width, canvas.height]);
 
   const selectedChar = (params.selectedChar as string) || 'A';
+  const selectedCharRef = useRef(selectedChar);
+  useEffect(() => {
+    selectedCharRef.current = selectedChar;
+  }, [selectedChar]);
   const studentName = (params.studentName as string) || (params.nickname as string) || 'mae';
   const activeAvatar = ((params.activeAvatar as string) || (params.avatar as string) || 'tiger').toLowerCase();
   const practiceChars = ((params.practiceChars as string) || '').split('').filter(Boolean);
@@ -107,6 +112,14 @@ export default function SandboxScreen() {
   /** Increments when the finish voice ends, so the image reveal waits for it. */
   const [revealSignal, setRevealSignal] = useState(0);
   const [demoToken, setDemoToken] = useState(0);
+  const [hintLevel, setHintLevel] = useState<HintLevel>(0);
+  useEffect(() => {
+    let active = true;
+    loadAttempts(selectedChar).then((attempts) => {
+      if (active) setHintLevel(hintLevelFor(attempts));
+    });
+    return () => { active = false; };
+  }, [selectedChar]);
 
   /** Lines are rebuilt from the current character so the avatar stays in sync. */
   const instructionLine = (): AvatarLine => ({
@@ -438,6 +451,7 @@ export default function SandboxScreen() {
     haptics.replayStrokes(strokePoints.current);
     haptics.finished();
     unlockSticker(selectedChar);
+    recordAttempt(selectedChar);
     saveLocalHomePractice(calculatedScore);
 
     // Reward reveal: a short pause lets the finished letter register first,
@@ -579,7 +593,7 @@ export default function SandboxScreen() {
         const svgX = (locationX / canvasRef.current.width) * 400;
         const svgY = (locationY / canvasRef.current.height) * 600;
         if (strokePoints.current.length === 0) {
-          const startPlayer = letterAudioRef.current[selectedChar];
+          const startPlayer = letterAudioRef.current[selectedCharRef.current];
           if (startPlayer) {
             try { startPlayer.seekTo(0); startPlayer.play(); } catch {}
           } else {
@@ -714,6 +728,8 @@ export default function SandboxScreen() {
             isOnPath={isOnPath}
             beePos={beePos}
             color={LETTER_COLORS[selectedChar] ?? '#0E5C5C'}
+            segments={charData.segments}
+            hintLevel={hintLevel}
             demoToken={demoToken}
             revealSignal={revealSignal}
             anchorImage={
@@ -721,7 +737,9 @@ export default function SandboxScreen() {
                 ? (lang === 'ph' ? VOICE_LINES.A.image : require('../../assets/images/apple.png'))
                 : selectedChar === 'B'
                   ? (lang === 'ph' ? VOICE_LINES.B.image : require('../../assets/images/ball.png'))
-                  : undefined
+                  : selectedChar === 'C'
+                    ? VOICE_LINES.C.image
+                    : undefined
             }
             panHandlers={panResponder.panHandlers}
           />

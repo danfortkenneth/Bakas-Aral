@@ -23,4 +23,9 @@ export const VOICE_LINES: Record<string, VoiceLine> = {
     finish: require('../assets/sounds/voice/BASO.m4a'),
     image: require('../assets/images/baso.png'),
   },
+  C: {
+    start: require('../assets/sounds/voice/LETRA C.m4a'),
+    finish: require('../assets/sounds/voice/CAKE.m4a'),
+    image: require('../assets/images/cake.png'),
+  },
 };

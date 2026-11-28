@@ -190,6 +190,9 @@ export function requiredHits(totalPoints: number): number {
   return totalPoints;
 }
 
+/** Spacing used when replaying strokes for completion checks (viewBox units). */
+export const ANALYSIS_SAMPLE_SPACING = 6;
+
 /** Turns a stroke (list of points) into evenly spaced samples. */
 export function samplePolyline(points: Point[], spacing = 4): Point[] {
   if (points.length === 0) return [];
@@ -238,7 +241,7 @@ export function analyseStrokes(
 
   for (const stroke of strokes) {
     // Ignore dot-pokes: a real stroke must travel along the letter.
-    const samples = samplePolyline(stroke);
+    const samples = samplePolyline(stroke, ANALYSIS_SAMPLE_SPACING);
     if (samples.length < MIN_STROKE_MOVES || strokeLength(stroke) < MIN_STROKE_LENGTH) {
       continue;
     }

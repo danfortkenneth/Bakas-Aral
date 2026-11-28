@@ -48,8 +48,14 @@ export type TraceCanvasProps = {
   revealSignal?: number;
   /** Anchor artwork revealed one-by-one at the old dot positions after finishing. */
   anchorImage?: number;
+  /** Guide-segment data used for stroke-order cues. */
+  segments?: { x1: number; y1: number; x2: number; y2: number; strokeId: number }[];
+  /** Adaptive hint fading: 0 = all dots, 2 = sparse dots. */
+  hintLevel?: 0 | 1 | 2;
   panHandlers: any;
 };
+
+const r = (n: number) => Math.round(n * 10) / 10;
 
 /* ----------------------------- sparkle burst ----------------------------- */
 
@@ -200,6 +206,8 @@ export default function TraceCanvas({
   demoToken = 0,
   revealSignal = 0,
   anchorImage,
+  segments = [],
+  hintLevel = 0,
   panHandlers,
 }: TraceCanvasProps) {
   const sx = width / VIEW_W;
@@ -211,24 +219,34 @@ export default function TraceCanvas({
   // is on; its first and last checkpoints get the 1 / ✓ markers.
   const nextPoint = points.find((point) => !hitIds.includes(point.id));
   const activeStrokeId = nextPoint?.strokeId ?? points[0]?.strokeId;
-  const startPoint = points.find((point) => point.strokeId === activeStrokeId) ?? points[0];
   const endPoint = nextPoint
     ? [...points].reverse().find((point) => point.strokeId === nextPoint.strokeId) ?? nextPoint
     : points[points.length - 1];
 
+  const strokeIds = [...new Set(segments.map((segment) => segment.strokeId))];
+  const strokeStarts = strokeIds
+    .map((id) => points.find((point) => point.strokeId === id))
+    .filter((point): point is HitPoint => !!point);
+  const activeStrokeIndex = strokeIds.indexOf(activeStrokeId ?? strokeIds[0]);
+  const strokePath = strokeIds[activeStrokeIndex] ?? strokeIds[0];
+  const strokeGuide = segments
+    .filter((segment) => segment.strokeId === strokePath)
+    .map((segment) => `M${r(segment.x1)},${r(segment.y1)} L${r(segment.x2)},${r(segment.y2)}`)
+    .join(' ');
+
   const cursorPoint = toPx(beePos);
 
-  // Auto-demo: before the child starts, a ghost light traces the whole route.
+  // Auto-demo: before the child starts, a ghost light traces the current stroke.
   const demoPoints = useMemo(() => {
     const pairs: { x: number; y: number }[] = [];
     const pattern = /(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/g;
     let match: RegExpExecArray | null;
-    while ((match = pattern.exec(path))) pairs.push({ x: Number(match[1]), y: Number(match[2]) });
+    while ((match = pattern.exec(strokeGuide || path))) pairs.push({ x: Number(match[1]), y: Number(match[2]) });
     const sampled = pairs.length >= 2 ? samplePolyline(pairs, 6) : pairs;
     if (sampled.length === 0) return [{ x: 200, y: 300 }, { x: 200, y: 300 }];
     if (sampled.length === 1) return [sampled[0], sampled[0]];
     return sampled;
-  }, [path]);
+  }, [strokeGuide, path]);
 
   const [demoProgress] = useState(() => new Animated.Value(0));
   const demoActive = demoToken === 0 && !isFinished;
@@ -237,13 +255,13 @@ export default function TraceCanvas({
     demoProgress.setValue(0);
     const animation = Animated.timing(demoProgress, {
       toValue: demoPoints.length - 1,
-      duration: 3200,
+      duration: Math.max(900, 3200 - hintLevel * 700),
       easing: Easing.inOut(Easing.quad),
       useNativeDriver: true,
     });
     animation.start();
     return () => animation.stop();
-  }, [demoActive, demoPoints.length, demoProgress]);
+  }, [demoActive, demoPoints.length, demoProgress, hintLevel]);
 
   const demoIndices = demoPoints.map((_, index) => index);
   const demoX = demoProgress.interpolate({
@@ -415,9 +433,15 @@ export default function TraceCanvas({
 
         {/* All remaining checkpoints stay visible; the next one is highlighted */}
         {!isFinished &&
-          points.map((point) => {
-            if (hitIds.includes(point.id)) return null;
-            const isNext = point.id === nextPoint?.id;
+          points
+            .filter((point, index) => {
+              if (hintLevel === 0) return true;
+              if (point.id === nextPoint?.id || point.endpoint) return true;
+              return index % (hintLevel + 1) === 0;
+            })
+            .map((point) => {
+              if (hitIds.includes(point.id)) return null;
+              const isNext = point.id === nextPoint?.id;
             return (
               <Circle
                 key={point.id}
@@ -456,15 +480,21 @@ export default function TraceCanvas({
         </Animated.View>
       ))}
 
-      {/* Start / end markers for the active stroke (1 → ✓) */}
-      {!isFinished && startPoint && (
-        <View
-          pointerEvents="none"
-          style={[styles.marker, styles.markerStart, { left: startPoint.x * sx - 11, top: startPoint.y * sy - 11 }]}
-        >
-          <Text style={styles.markerText}>1</Text>
-        </View>
-      )}
+      {/* Stroke-order markers: 1 → 2 → 3, current stroke highlighted */}
+      {!isFinished &&
+        strokeStarts.map((point, index) => (
+          <View
+            key={`stroke-${point.id}`}
+            pointerEvents="none"
+            style={[
+              styles.marker,
+              index === activeStrokeIndex ? styles.markerStart : styles.markerPending,
+              { left: point.x * sx - 11, top: point.y * sy - 11 },
+            ]}
+          >
+            <Text style={styles.markerText}>{index + 1}</Text>
+          </View>
+        ))}
       {!isFinished && endPoint && (
         <View
           pointerEvents="none"
@@ -592,6 +622,7 @@ const styles = StyleSheet.create({
   },
   marker: { position: 'absolute', width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center', elevation: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.18, shadowRadius: 4 },
   markerStart: { backgroundColor: '#1E3A8A' },
+  markerPending: { backgroundColor: '#9CA3AF', opacity: 0.8 },
   markerEnd: { backgroundColor: '#16A34A' },
   markerText: { color: 'white', fontWeight: '900', fontSize: 12 },
 });
