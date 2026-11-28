@@ -445,8 +445,8 @@ export default function TraceCanvas({
           style={[
             styles.anchorImage,
             {
-              left: point.x * sx - 13,
-              top: point.y * sy - 13,
+              left: point.x * sx - 20,
+              top: point.y * sy - 20,
               opacity: anchorAnims[index],
               transform: [{ scale: anchorAnims[index] }],
             },
@@ -555,8 +555,8 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
   },
   svg: { backgroundColor: 'transparent' },
-  anchorImage: { position: 'absolute', width: 26, height: 26, alignItems: 'center', justifyContent: 'center' },
-  anchorImageArt: { width: 26, height: 26 },
+  anchorImage: { position: 'absolute', width: 40, height: 40, alignItems: 'center', justifyContent: 'center' },
+  anchorImageArt: { width: 40, height: 40 },
   abs: { position: 'absolute' },
   spark: { position: 'absolute', width: 8, height: 8, borderRadius: 4, marginLeft: -4, marginTop: -4 },
   hand: { fontSize: 38 },

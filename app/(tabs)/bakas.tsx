@@ -12,6 +12,7 @@ import { db } from '../../lib/firebase';
 import { collection, addDoc } from 'firebase/firestore';
 import { useLanguage } from '../_layout';
 import { FINISH_PHRASES, LETTER_COLORS, PHONETIC_PHRASES, getCharacter } from '../../constants/characterLibrary';
+import { PRAISE_SOUND, VOICE_LINES } from '../../constants/voiceLines';
 import {
   ENDPOINT_TOLERANCE,
   MIN_MOVES,
@@ -184,10 +185,10 @@ export default function BakasScreen() {
   const lastWarnTime = useRef<number>(0);
 
   const errorPlayerRef = useRef<any>(null);
-  /** Recorded A voice lines: letter at start, praise at the halfway point. */
-  const letterAudioRef = useRef<any>(null);
+  /** Recorded voice lines per character + shared praise. */
+  const letterAudioRef = useRef<Record<string, any>>({});
+  const finishAudioRef = useRef<Record<string, any>>({});
   const praiseAudioRef = useRef<any>(null);
-  const arawAudioRef = useRef<any>(null);
   const revealTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const praisePlayedRef = useRef(false);
   const lastErrorSoundTime = useRef<number>(0);
@@ -278,17 +279,24 @@ export default function BakasScreen() {
   }, [selectedChar]);
 
   useEffect(() => {
+    const letters = letterAudioRef.current;
+    const finishes = finishAudioRef.current;
     try {
       errorPlayerRef.current = createAudioPlayer(require('../../assets/sounds/error.mp3'));
-      letterAudioRef.current = createAudioPlayer(require('../../assets/sounds/voice/LETRA A.m4a'));
-      praiseAudioRef.current = createAudioPlayer(require('../../assets/sounds/voice/MAHUSAY!.m4a'));
-      arawAudioRef.current = createAudioPlayer(require('../../assets/sounds/voice/ARAW.m4a'));
-      arawAudioRef.current.addListener('playbackStatusUpdate', (status: any) => {
-        if (status.didJustFinish) {
-          if (revealTimerRef.current) clearTimeout(revealTimerRef.current);
-          setRevealSignal((value) => value + 1);
+      praiseAudioRef.current = createAudioPlayer(PRAISE_SOUND);
+      for (const [character, line] of Object.entries(VOICE_LINES)) {
+        if (line.start) letters[character] = createAudioPlayer(line.start);
+        if (line.finish) {
+          const player = createAudioPlayer(line.finish);
+          finishes[character] = player;
+          player.addListener('playbackStatusUpdate', (status: any) => {
+            if (status.didJustFinish) {
+              if (revealTimerRef.current) clearTimeout(revealTimerRef.current);
+              setRevealSignal((value) => value + 1);
+            }
+          });
         }
-      });
+      }
     } catch (e) {
       console.log("Error initializing static audio players:", e);
     }
@@ -296,9 +304,9 @@ export default function BakasScreen() {
     return () => {
       try {
         if (errorPlayerRef.current) errorPlayerRef.current.remove();
-        if (letterAudioRef.current) letterAudioRef.current.remove();
         if (praiseAudioRef.current) praiseAudioRef.current.remove();
-        if (arawAudioRef.current) arawAudioRef.current.remove();
+        Object.values(letters).forEach((player) => player.remove());
+        Object.values(finishes).forEach((player) => player.remove());
         if (revealTimerRef.current) clearTimeout(revealTimerRef.current);
       } catch {}
     };
@@ -380,11 +388,12 @@ export default function BakasScreen() {
     setIsFinished(true);
     setIsOnPath(true);
 
-    if (selectedChar === 'A' && arawAudioRef.current) {
+    const finishPlayer = finishAudioRef.current[selectedChar];
+    if (finishPlayer) {
       // Recorded finish line — the image reveal waits for it to end.
       try {
-        arawAudioRef.current.seekTo(0);
-        arawAudioRef.current.play();
+        finishPlayer.seekTo(0);
+        finishPlayer.play();
         revealTimerRef.current = setTimeout(() => setRevealSignal((value) => value + 1), 10000);
       } catch {
         setRevealSignal((value) => value + 1);
@@ -460,9 +469,9 @@ export default function BakasScreen() {
       setHitIds([...hitPoints.current]);
       haptics.checkpoint();
 
-      // Recorded praise halfway through A (after half the guide dots).
+      // Recorded praise halfway through a recorded character.
       if (
-        selectedChar === 'A' &&
+        VOICE_LINES[selectedChar]?.start &&
         !praisePlayedRef.current &&
         hitPoints.current.length >= Math.ceil(hitsNeeded / 2) &&
         praiseAudioRef.current
@@ -539,8 +548,9 @@ export default function BakasScreen() {
         const svgX = (locationX / canvasRef.current.width) * 400;
         const svgY = (locationY / canvasRef.current.height) * 600;
         if (strokePoints.current.length === 0) {
-          if (selectedChar === 'A' && letterAudioRef.current) {
-            try { letterAudioRef.current.seekTo(0); letterAudioRef.current.play(); } catch {}
+          const startPlayer = letterAudioRef.current[selectedChar];
+          if (startPlayer) {
+            try { startPlayer.seekTo(0); startPlayer.play(); } catch {}
           } else {
             handlersRef.current.announcePhonetic();
           }
@@ -677,9 +687,13 @@ export default function BakasScreen() {
             color={LETTER_COLORS[selectedChar] ?? '#0E5C5C'}
             demoToken={demoToken}
             revealSignal={revealSignal}
-            anchorImage={selectedChar === 'A'
-              ? (lang === 'ph' ? require('../../assets/images/araw.png') : require('../../assets/images/apple.png'))
-              : undefined}
+            anchorImage={
+              selectedChar === 'A'
+                ? (lang === 'ph' ? VOICE_LINES.A.image : require('../../assets/images/apple.png'))
+                : selectedChar === 'B'
+                  ? (lang === 'ph' ? VOICE_LINES.B.image : require('../../assets/images/ball.png'))
+                  : undefined
+            }
             panHandlers={panResponder.panHandlers}
           />
           <SpeakingAvatar
