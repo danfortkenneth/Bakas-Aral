@@ -18,7 +18,12 @@ import { useLanguage } from '../_layout';
 import { useRouter } from 'expo-router'; 
 import { auth, db } from '../../lib/firebase';
 import { scaleFor } from '../../lib/responsive';
-import { areHapticsEnabled, setHapticsEnabled } from '../../lib/haptics';
+import {
+  cycleHapticsLevel,
+  getHapticsLevel,
+  haptics,
+  type HapticLevel,
+} from '../../lib/haptics';
 import { 
   doc, 
   updateDoc, 
@@ -35,6 +40,13 @@ import * as FileSystem from 'expo-file-system/legacy'; // Inayos din para sa leg
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const scale = scaleFor(SCREEN_WIDTH);
 const normalize = (size: number) => Math.round(PixelRatio.roundToNearestPixel(size * scale));
+
+const HAPTIC_LABELS: Record<HapticLevel, { en: string; ph: string }> = {
+  off: { en: 'OFF', ph: 'PATAY' },
+  weak: { en: 'LIGHT', ph: 'PAHINA' },
+  normal: { en: 'NORMAL', ph: 'NORMAL' },
+  strong: { en: 'STRONG', ph: 'MALAKAS' },
+};
 
 const LEARNING_OUTCOMES = [
   { icon: 'sparkles', en: 'Letter recognition', ph: 'Pagkilala sa titik', enDetail: 'Home grid + tracing', phDetail: 'Grid at pagbakas' },
@@ -79,7 +91,7 @@ export default function TeacherScreen() {
   const [activeStudentAvatar, setActiveStudentAvatar] = useState<string | null>(null); 
   const [updatingSession, setUpdatingSession] = useState(false);
   const [isAvatarModalOpen, setIsAvatarModalOpen] = useState(false);
-  const [hapticsOn, setHapticsOn] = useState(() => areHapticsEnabled());
+  const [hapticLevel, setHapticLevel] = useState<HapticLevel>(() => getHapticsLevel());
 
   const [students, setStudents] = useState<Student[]>([]);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
@@ -499,21 +511,33 @@ export default function TeacherScreen() {
 
           <TouchableOpacity
             style={styles.settingRow}
-            onPress={() => {
-              const next = !hapticsOn;
-              setHapticsOn(next);
-              setHapticsEnabled(next);
-            }}
+            onPress={async () => setHapticLevel(await cycleHapticsLevel())}
           >
             <View style={{ flexDirection: 'row', alignItems: 'center' }}>
               <Ionicons name="notifications-outline" size={18} color="#333" style={{ marginRight: 8 }} />
               <Text style={{ fontWeight: 'bold', fontSize: normalize(12) }}>
-                {lang === 'ph' ? 'Haptic Feedback' : 'Haptic Feedback'}
+                {lang === 'ph' ? 'Lakas ng Haptic' : 'Haptic Strength'}
               </Text>
             </View>
-            <Text style={{ fontWeight: '900', color: hapticsOn ? '#16A34A' : '#9CA3AF', fontSize: normalize(12) }}>
-              {hapticsOn ? (lang === 'ph' ? 'BUKSAN' : 'ON') : (lang === 'ph' ? 'PATAY' : 'OFF')}
+            <Text
+              style={{
+                fontWeight: '900',
+                color: hapticLevel === 'off' ? '#9CA3AF' : '#16A34A',
+                fontSize: normalize(12),
+              }}
+            >
+              {lang === 'ph' ? HAPTIC_LABELS[hapticLevel].ph : HAPTIC_LABELS[hapticLevel].en}
             </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.settingRow} onPress={() => haptics.test()}>
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <Ionicons name="flash-outline" size={18} color="#F77F67" style={{ marginRight: 8 }} />
+              <Text style={{ fontWeight: 'bold', fontSize: normalize(12) }}>
+                {lang === 'ph' ? 'Subukan ang Haptic' : 'Test Haptic'}
+              </Text>
+            </View>
+            <Ionicons name="play-circle-outline" size={18} color="#F77F67" />
           </TouchableOpacity>
         </View>
 

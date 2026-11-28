@@ -6,17 +6,17 @@
  * red B, yellow C) with a white sticker outline, matching the reference art.
  * New in this version:
  *  - the NEXT dot pulses, reached dots pop with sparkles
- *  - the bee springs smoothly to the finger, floats + flaps when idle, and
- *    bounces every time a dot is reached
- *  - an idle hint hand glides from the bee to the next dot
- *  - confetti + a bee dance when the letter is finished
+ *  - a glowing cursor follows the finger instead of a mascot
+ *  - a ghost light traces the whole route before the child starts
+ *  - an idle hint hand glides to the next checkpoint when the child pauses
+ *  - confetti + a star reward when the letter is finished
  *
  * Uses only React Native's built-in Animated with the native driver, so there
  * are no extra dependencies and the motion stays smooth on low-end phones.
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Easing, Image, StyleSheet, Text, View } from 'react-native';
-import Svg, { Circle, Defs, Ellipse, G, Path, Pattern, Rect } from 'react-native-svg';
+import Svg, { Circle, Defs, Ellipse, Path, Pattern, Rect } from 'react-native-svg';
 import type { HitPoint } from '../constants/traceableData';
 import { samplePolyline } from '../lib/tracing';
 
@@ -38,11 +38,11 @@ export type TraceCanvasProps = {
   hitIds: number[];
   isFinished: boolean;
   isOnPath: boolean;
-  /** Finger position in viewBox coordinates — the bee rides here. */
+  /** Finger position in viewBox coordinates — the glowing cursor follows it. */
   beePos: { x: number; y: number };
   /** Base colour of the character. */
   color?: string;
-  /** Incremented on the child's first touch — stops the auto-demo bee. */
+  /** Incremented on the child's first touch — stops the auto ghost demo. */
   demoToken?: number;
   /** Incremented after the finish voice ends — starts the anchor image reveal. */
   revealSignal?: number;
@@ -50,8 +50,6 @@ export type TraceCanvasProps = {
   anchorImage?: number;
   panHandlers: any;
 };
-
-const r = (n: number) => Math.round(n * 10) / 10;
 
 /* ----------------------------- sparkle burst ----------------------------- */
 
@@ -210,15 +208,17 @@ export default function TraceCanvas({
   const dotScale = Math.max(1, Math.min(sx, 1.6));
 
   // The first dot still waiting to be reached tells us which stroke the child
-  // is on; the hive waits at that stroke's last checkpoint.
+  // is on; its first and last checkpoints get the 1 / ✓ markers.
   const nextPoint = points.find((point) => !hitIds.includes(point.id));
-  const hivePoint = nextPoint
+  const activeStrokeId = nextPoint?.strokeId ?? points[0]?.strokeId;
+  const startPoint = points.find((point) => point.strokeId === activeStrokeId) ?? points[0];
+  const endPoint = nextPoint
     ? [...points].reverse().find((point) => point.strokeId === nextPoint.strokeId) ?? nextPoint
     : points[points.length - 1];
 
-  const bee = toPx(beePos);
+  const cursorPoint = toPx(beePos);
 
-  // Auto-demo: before the child starts, a bee shows the whole route once.
+  // Auto-demo: before the child starts, a ghost light traces the whole route.
   const demoPoints = useMemo(() => {
     const pairs: { x: number; y: number }[] = [];
     const pattern = /(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/g;
@@ -248,12 +248,12 @@ export default function TraceCanvas({
   const demoIndices = demoPoints.map((_, index) => index);
   const demoX = demoProgress.interpolate({
     inputRange: demoIndices,
-    outputRange: demoPoints.map((point) => point.x * sx - 20),
+    outputRange: demoPoints.map((point) => point.x * sx - 12),
     extrapolate: 'clamp',
   });
   const demoY = demoProgress.interpolate({
     inputRange: demoIndices,
-    outputRange: demoPoints.map((point) => point.y * sy - 22),
+    outputRange: demoPoints.map((point) => point.y * sy - 12),
     extrapolate: 'clamp',
   });
 
@@ -276,23 +276,21 @@ export default function TraceCanvas({
     return () => sequence.stop();
   }, [isFinished, anchorImage, revealSignal, anchorAnims]);
 
-  /* ---- bee: spring follow, idle float, hit bounce, finish dance ---- */
-  const [beeXY] = useState(() => new Animated.ValueXY({ x: bee.x - 20, y: bee.y - 22 }));
+  /* ---- glowing cursor: follows the finger, breathes, pulses on a dot ---- */
+  const [cursorXY] = useState(() => new Animated.ValueXY({ x: cursorPoint.x - 12, y: cursorPoint.y - 12 }));
   const [float] = useState(() => new Animated.Value(0));
-  const [flap] = useState(() => new Animated.Value(0));
   const [bounce] = useState(() => new Animated.Value(1));
-  const [dance] = useState(() => new Animated.Value(0));
 
   useEffect(() => {
-    Animated.spring(beeXY, {
-      toValue: { x: bee.x - 20, y: bee.y - 22 },
+    Animated.spring(cursorXY, {
+      toValue: { x: cursorPoint.x - 12, y: cursorPoint.y - 12 },
       stiffness: 260,
       damping: 20,
       mass: 0.6,
       useNativeDriver: true,
     }).start();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bee.x, bee.y]);
+  }, [cursorPoint.x, cursorPoint.y]);
 
   useEffect(() => {
     const floatLoop = Animated.loop(
@@ -301,19 +299,9 @@ export default function TraceCanvas({
         Animated.timing(float, { toValue: 0, duration: 700, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
       ])
     );
-    const flapLoop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(flap, { toValue: 1, duration: 90, useNativeDriver: true }),
-        Animated.timing(flap, { toValue: 0, duration: 90, useNativeDriver: true }),
-      ])
-    );
     floatLoop.start();
-    flapLoop.start();
-    return () => {
-      floatLoop.stop();
-      flapLoop.stop();
-    };
-  }, [float, flap]);
+    return () => floatLoop.stop();
+  }, [float]);
 
   // Bounce each time a new dot is reached.
   const lastHitCount = useRef(hitIds.length);
@@ -342,22 +330,6 @@ export default function TraceCanvas({
     lastHitCount.current = hitIds.length;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hitIds.length]);
-
-  useEffect(() => {
-    if (!isFinished) {
-      dance.setValue(0);
-      return;
-    }
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(dance, { toValue: 1, duration: 260, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-        Animated.timing(dance, { toValue: -1, duration: 520, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-        Animated.timing(dance, { toValue: 0, duration: 260, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-      ])
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [isFinished, dance]);
 
   /* ---- idle hint hand ---- */
   // A token that only becomes true for the latest activity. No synchronous
@@ -389,7 +361,7 @@ export default function TraceCanvas({
   }, [showHand, nextPoint?.id, handProgress]);
 
   const nextPx = nextPoint ? toPx(nextPoint) : null;
-  const handFrom = bee;
+  const handFrom = cursorPoint;
 
   return (
     <View style={[{ width, height }, styles.wrapper]} {...panHandlers}>
@@ -459,18 +431,6 @@ export default function TraceCanvas({
             );
           })}
 
-        {/* Beehive: the little reward waiting at the end of the stroke */}
-        {!isFinished && hivePoint && (
-          <G transform={`translate(${r(hivePoint.x)}, ${r(hivePoint.y)})`}>
-            <Ellipse cx="0" cy="6" rx="19" ry="13" fill="#F2A93B" stroke="#8A5A16" strokeWidth={3} />
-            <Path d="M-16,1 Q0,-7 16,1" fill="none" stroke="#C47A1A" strokeWidth={3} />
-            <Ellipse cx="0" cy="-7" rx="15" ry="11" fill="#FFD166" stroke="#8A5A16" strokeWidth={3} />
-            <Path d="M-12,-10 Q0,-17 12,-10" fill="none" stroke="#C47A1A" strokeWidth={2.5} />
-            <Ellipse cx="0" cy="-20" rx="11" ry="8" fill="#FFD166" stroke="#8A5A16" strokeWidth={3} />
-            <Circle cx="0" cy="-29" r="3" fill="#8A5A16" />
-          </G>
-        )}
-
         {/* Gentle red rim if the finger leaves the writing lane */}
         {!isOnPath && !isFinished && (
           <Rect x={4} y={4} width={VIEW_W - 8} height={VIEW_H - 8} rx={26} fill="none" stroke="#EF4444" strokeWidth={8} opacity={0.45} />
@@ -496,6 +456,24 @@ export default function TraceCanvas({
         </Animated.View>
       ))}
 
+      {/* Start / end markers for the active stroke (1 → ✓) */}
+      {!isFinished && startPoint && (
+        <View
+          pointerEvents="none"
+          style={[styles.marker, styles.markerStart, { left: startPoint.x * sx - 11, top: startPoint.y * sy - 11 }]}
+        >
+          <Text style={styles.markerText}>1</Text>
+        </View>
+      )}
+      {!isFinished && endPoint && (
+        <View
+          pointerEvents="none"
+          style={[styles.marker, styles.markerEnd, { left: endPoint.x * sx - 11, top: endPoint.y * sy - 11 }]}
+        >
+          <Text style={styles.markerText}>✓</Text>
+        </View>
+      )}
+
       {/* Pulse ring on the next dot */}
       {!isFinished && nextPx && <PulseRing key={nextPoint!.id} x={nextPx.x} y={nextPx.y} size={22 * dotScale} />}
 
@@ -509,7 +487,7 @@ export default function TraceCanvas({
         />
       ))}
 
-      {/* Hint hand: glides from the bee to the next dot when the child is idle */}
+      {/* Hint hand: glides from the cursor to the next dot when the child is idle */}
       {showHand && nextPx && (
         <Animated.View
           pointerEvents="none"
@@ -530,42 +508,32 @@ export default function TraceCanvas({
         </Animated.View>
       )}
 
-      {/* Auto-demo bee: shows the whole route once before the child starts */}
+      {/* Ghost demo: a soft light traces the whole route once before writing */}
       {demoActive && (
         <Animated.View
           pointerEvents="none"
-          style={[styles.bee, { transform: [{ translateX: demoX }, { translateY: demoY }] }]}
-        >
-          <Text style={styles.beeEmoji}>🐝</Text>
-        </Animated.View>
+          style={[styles.ghostDot, { transform: [{ translateX: demoX }, { translateY: demoY }] }]}
+        />
       )}
 
-      {/* Bee buddy — takes over as soon as the demo ends */}
+      {/* Glowing cursor: follows the finger, breathes, pulses on a dot */}
       {!demoActive && (
-      <Animated.View
-        pointerEvents="none"
-        style={[
-          styles.bee,
-          {
-            transform: [
-              { translateX: beeXY.x },
-              { translateY: beeXY.y },
-              { translateY: float.interpolate({ inputRange: [0, 1], outputRange: [0, -4] }) },
-              { scale: bounce },
-              { rotate: dance.interpolate({ inputRange: [-1, 0, 1], outputRange: ['-18deg', '0deg', '18deg'] }) },
-            ],
-          },
-        ]}
-      >
-        <Animated.Text
+        <Animated.View
+          pointerEvents="none"
           style={[
-            styles.beeEmoji,
-            { transform: [{ scaleX: flap.interpolate({ inputRange: [0, 1], outputRange: [1, 0.9] }) }] },
+            styles.cursor,
+            {
+              transform: [
+                { translateX: cursorXY.x },
+                { translateY: cursorXY.y },
+                { scale: bounce },
+              ],
+              opacity: float.interpolate({ inputRange: [0, 1], outputRange: [0.75, 1] }),
+            },
           ]}
         >
-          🐝
-        </Animated.Text>
-      </Animated.View>
+          <View style={styles.cursorCore} />
+        </Animated.View>
       )}
 
       {isFinished && <Confetti width={width} height={height} />}
@@ -592,14 +560,38 @@ const styles = StyleSheet.create({
   abs: { position: 'absolute' },
   spark: { position: 'absolute', width: 8, height: 8, borderRadius: 4, marginLeft: -4, marginTop: -4 },
   hand: { fontSize: 38 },
-  bee: {
+  ghostDot: {
     position: 'absolute',
     left: 0,
     top: 0,
-    width: 40,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 3,
+    borderColor: '#FBBF24',
+    shadowColor: '#F59E0B',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 12,
+    elevation: 6,
   },
-  beeEmoji: { fontSize: 34, lineHeight: 40, textAlign: 'center' },
+  cursor: { position: 'absolute', left: 0, top: 0, width: 24, height: 24, alignItems: 'center', justifyContent: 'center' },
+  cursorCore: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 2,
+    borderColor: '#FBBF24',
+    shadowColor: '#F59E0B',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.7,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  marker: { position: 'absolute', width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center', elevation: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.18, shadowRadius: 4 },
+  markerStart: { backgroundColor: '#1E3A8A' },
+  markerEnd: { backgroundColor: '#16A34A' },
+  markerText: { color: 'white', fontWeight: '900', fontSize: 12 },
 });
